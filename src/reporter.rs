@@ -31,7 +31,14 @@ impl<'a> Report<'a> {
     }
 }
 
-pub trait Reporter {
-    fn report_warning(&mut self, report: Report);
-    fn report_error(&mut self, report: Report);
+impl<'a> fmt::Display for Report<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (line, col) = self.token.get_pos();
+        write!(f, "{} [{}:{}]\n{}", self.msg, line, col, self.token)
+    }
+}
+
+pub trait Reporter<'a> {
+    fn warning(&mut self, report: Report<'a>);
+    fn error(&mut self, report: Report<'a>);
 }

@@ -37,7 +37,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn pop_token(&mut self, typ: TokenType) -> Token {
+    fn pop_token(&mut self, typ: TokenType) -> Token<'a> {
         let start = self.start;
         let length = self.current - self.start;
         self.start = self.current;
@@ -52,21 +52,21 @@ impl<'a> Tokenizer<'a> {
             .collect::<String>()
     }
 
-    fn pop_unknown_token(&mut self, reporter: &mut dyn Reporter) -> Token {
-        let token = self.pop_token(TokenType::Unkown);
+    fn pop_unknown_token(&mut self, reporter: &mut dyn Reporter<'a>) -> Token<'a> {
+        let token = self.pop_token(TokenType::Unknown);
         let report = Report::new(
             Phase::Tokenizing,
             "رمز غير متوقع".to_string(),
             token.clone(),
         );
-        reporter.report_error(report);
+        reporter.error(report);
         return token;
     }
 
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.peek(0) {
             match c {
-                '\r' | '\t' | ' ' => {
+                '\r' | '\t' | '\n' | ' ' => {
                     self.next();
                     self.start = self.current;
                 }
@@ -75,12 +75,11 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    pub fn next_token(&mut self, reporter: &mut dyn Reporter) -> Token {
+    pub fn next_token(&mut self, reporter: &mut dyn Reporter<'a>) -> Token<'a> {
         self.skip_whitespace();
 
         if let Some(c) = self.next() {
             match c {
-                '\n' => self.pop_token(TokenType::NewLine),
                 '(' => self.pop_token(TokenType::OParen),
                 ')' => self.pop_token(TokenType::CParen),
                 '{' => self.pop_token(TokenType::OBrace),
@@ -158,7 +157,7 @@ impl<'a> Tokenizer<'a> {
                                         token.clone(),
                                     );
 
-                                    reporter.report_warning(report);
+                                    reporter.warning(report);
 
                                     return token;
                                 } else {
@@ -173,7 +172,7 @@ impl<'a> Tokenizer<'a> {
                                     token.clone(),
                                 );
 
-                                reporter.report_error(report);
+                                reporter.error(report);
 
                                 return token;
                             }
@@ -195,7 +194,7 @@ impl<'a> Tokenizer<'a> {
                     let report =
                         Report::new(Phase::Tokenizing, "نص غير مغلق".to_string(), token.clone());
 
-                    reporter.report_error(report);
+                    reporter.error(report);
 
                     return token;
                 }
@@ -222,7 +221,7 @@ impl<'a> Tokenizer<'a> {
                                 "خطأ" => TokenType::False,
                                 "إن" => TokenType::If,
                                 "إلا" => TokenType::Else,
-                                "دالة" => TokenType::Fun,
+                                "دالة" => TokenType::Function,
                                 "كرر" => TokenType::Loop,
                                 "بينما" => TokenType::While,
                                 "إفعل" => TokenType::Do,
@@ -237,9 +236,9 @@ impl<'a> Tokenizer<'a> {
                         );
                     }
 
-                    if is_numeric(c) {
+                    if c.is_ascii_digit() {
                         while let Some(c) = self.peek(0) {
-                            if is_numeric(c) {
+                            if c.is_ascii_digit() {
                                 self.next();
                             } else {
                                 break;
@@ -248,11 +247,11 @@ impl<'a> Tokenizer<'a> {
 
                         if let Some('.') = self.peek(0) {
                             if let Some(c) = self.peek(1) {
-                                if is_numeric(c) {
+                                if c.is_ascii_digit() {
                                     self.next();
                                     self.next();
                                     while let Some(c) = self.peek(0) {
-                                        if is_numeric(c) {
+                                        if c.is_ascii_digit() {
                                             self.next();
                                         } else {
                                             break;
@@ -280,7 +279,7 @@ impl<'a> Tokenizer<'a> {
                                     token.clone(),
                                 );
 
-                                reporter.report_error(report);
+                                reporter.error(report);
 
                                 return token;
                             }
@@ -296,8 +295,4 @@ impl<'a> Tokenizer<'a> {
             self.pop_token(TokenType::EOF)
         }
     }
-}
-
-pub fn is_numeric(c: char) -> bool {
-    c >= '0' && c <= '9' || c >= '٠' && c <= '٩'
 }
