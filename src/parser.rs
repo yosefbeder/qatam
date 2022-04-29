@@ -1,4 +1,4 @@
-use super::ast::{Expr, Literal};
+use super::ast::{Expr, Literal, Stml};
 use super::operators::{Associativity, OPERATORS};
 use super::reporter::{Phase, Report, Reporter};
 use super::token::{Token, TokenType, INVALID_TYPES};
@@ -347,8 +347,187 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(expr)
     }
 
+    fn block(&mut self) -> Result<Stml<'b>, ()> {
+        let mut stmls = vec![];
+        if !self.check(TokenType::CBrace) {
+            while !self.at_end() && !self.check(TokenType::CBrace) {
+                stmls.push(self.stml()?);
+            }
+        };
+        self.consume(TokenType::CBrace, "توقعت '}' لنهاية المجموعة")?;
+        Ok(Stml::Block(stmls))
+    }
+
+    fn return_stml(&mut self) -> Result<Stml<'b>, ()> {
+        Ok(Stml::Return(Box::new(self.expr(9, true)?)))
+    }
+
+    fn throw_stml(&mut self) -> Result<Stml<'b>, ()> {
+        Ok(Stml::Throw(
+            Rc::new(match &self.previous {
+                Some(token) => token.clone(),
+                None => unreachable!(),
+            }),
+            Box::new(self.expr(9, true)?),
+        ))
+    }
+
+    fn params(&mut self) -> Result<Vec<Rc<Token<'b>>>, ()> {
+        let mut params = vec![];
+
+        if self.check(TokenType::Identifier) {
+            self.consume(TokenType::Identifier, "توقعت اسم معامل")?;
+            params.push(Rc::new(match &self.previous {
+                Some(token) => token.clone(),
+                None => unreachable!(),
+            }));
+        }
+        while self.check(TokenType::Comma) {
+            self.advance()?;
+            if self.check(TokenType::CParen) {
+                break;
+            }
+            self.consume(TokenType::Identifier, "توقعت اسم معامل")?;
+            params.push(Rc::new(match &self.previous {
+                Some(token) => token.clone(),
+                None => unreachable!(),
+            }));
+        }
+
+        Ok(params)
+    }
+
+    fn function_stml(&mut self) -> Result<Stml<'b>, ()> {
+        self.consume(TokenType::Identifier, "توقعت اسم الدالة")?;
+        let name = match &self.previous {
+            Some(token) => token.clone(),
+            None => unreachable!(),
+        };
+        self.consume(TokenType::OParen, "توقعت '(' قبل المعاملات")?;
+        let params = self.params()?;
+        self.consume(TokenType::CParen, "توقعت ')' بعد المعاملات")?;
+        self.consume(TokenType::OBrace, "توقعت '{' بعد المعاملات")?;
+        let body = self.block()?;
+        Ok(Stml::Function(Rc::new(name), params, Box::new(body)))
+    }
+
+    fn expr_stml(&mut self) -> Result<Stml<'b>, ()> {
+        let expr = self.expr(9, true)?;
+
+        Ok(Stml::Expr(expr))
+    }
+
+    fn while_stml(&mut self) -> Result<Stml<'b>, ()> {
+        self.consume(TokenType::OParen, "توقعت '(' قبل الشرط")?;
+        let condition = self.expr(9, true)?;
+        self.consume(TokenType::CParen, "توقعت ')' بعد الشرط")?;
+        self.consume(TokenType::OBrace, "توقعت '{' بعد الشرط")?;
+        let body = self.block()?;
+        Ok(Stml::While(Box::new(condition), Box::new(body)))
+    }
+
+    fn loop_stml(&mut self) -> Result<Stml<'b>, ()> {
+        self.consume(TokenType::OBrace, "توقعت '{'")?;
+        let body = self.block()?;
+        Ok(Stml::Loop(Box::new(body)))
+    }
+
+    fn break_stml(&mut self) -> Result<Stml<'b>, ()> {
+        Ok(Stml::Break)
+    }
+
+    fn continue_stml(&mut self) -> Result<Stml<'b>, ()> {
+        Ok(Stml::Continue)
+    }
+
+    fn try_catch(&mut self) -> Result<Stml<'b>, ()> {
+        self.consume(TokenType::OBrace, "توقعت '{'")?;
+        let body = self.block()?;
+        self.consume(TokenType::Catch, "توقعت 'أمسك'")?;
+        self.consume(TokenType::OParen, "توقعت '('")?;
+        let name = match &self.previous {
+            Some(token) => token.clone(),
+            None => unreachable!(),
+        };
+        self.consume(TokenType::Identifier, "توقعت اسم المعامل الذي سيحمل الخطأ")?;
+        self.consume(TokenType::CParen, "توقعت ')'")?;
+        self.consume(TokenType::OBrace, "توقعت '{'")?;
+        let catch_body = self.block()?;
+        Ok(Stml::TryCatch(
+            Box::new(body),
+            Rc::new(name),
+            Box::new(catch_body),
+        ))
+    }
+
+    fn if_else_stml(&mut self) -> Result<Stml<'b>, ()> {
+        self.consume(TokenType::OParen, "توقعت '(' قبل الشرط")?;
+        let condition = self.expr(9, true)?;
+        self.consume(TokenType::CParen, "توقعت ')' بعد الشرط")?;
+        self.consume(TokenType::OBrace, "توقعت '{' بعد الشرط")?;
+        let if_body = self.block()?;
+        let else_body = if self.check(TokenType::Else) {
+            self.advance()?;
+            self.consume(TokenType::OBrace, "توقعت '{' إلا")?;
+            Some(Box::new(self.block()?))
+        } else {
+            None
+        };
+
+        Ok(Stml::IfElse(
+            Box::new(condition),
+            Box::new(if_body),
+            else_body,
+        ))
+    }
+
+    fn stml(&mut self) -> Result<Stml<'b>, ()> {
+        if self.check(TokenType::Function) {
+            self.advance()?;
+            self.function_stml()
+        } else if self.check(TokenType::While) {
+            self.advance()?;
+            self.while_stml()
+        } else if self.check(TokenType::Loop) {
+            self.advance()?;
+            self.loop_stml()
+        } else if self.check(TokenType::If) {
+            self.advance()?;
+            self.if_else_stml()
+        } else if self.check(TokenType::Try) {
+            self.advance()?;
+            self.try_catch()
+        } else if self.check(TokenType::OBrace) {
+            self.advance()?;
+            self.block()
+        } else if self.check(TokenType::Break) {
+            self.advance()?;
+            self.break_stml()
+        } else if self.check(TokenType::Continue) {
+            self.advance()?;
+            self.continue_stml()
+        } else if self.check(TokenType::Return) {
+            self.advance()?;
+            self.return_stml()
+        } else if self.check(TokenType::Throw) {
+            self.advance()?;
+            self.throw_stml()
+        } else {
+            self.expr_stml()
+        }
+    }
+
     pub fn parse_expr(&mut self) -> Result<Expr<'b>, ()> {
         self.advance()?;
         self.expr(9, true)
+    }
+
+    pub fn parse(&mut self) -> Result<Vec<Stml<'b>>, ()> {
+        let mut stmls = vec![];
+        self.advance()?;
+        while !self.at_end() {
+            stmls.push(self.stml()?);
+        }
+        Ok(stmls)
     }
 }

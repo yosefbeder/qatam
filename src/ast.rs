@@ -66,3 +66,18 @@ impl<'a> Expr<'a> {
         }
     }
 }
+
+#[derive(Debug)]
+pub enum Stml<'a> {
+    Block(Vec<Stml<'a>>),
+    Function(Rc<Token<'a>>, Vec<Rc<Token<'a>>>, Box<Stml<'a>>),
+    Return(Box<Expr<'a>>),
+    Throw(Rc<Token<'a>>, Box<Expr<'a>>), //? We'll need it's token
+    TryCatch(Box<Stml<'a>>, Rc<Token<'a>>, Box<Stml<'a>>),
+    IfElse(Box<Expr<'a>>, Box<Stml<'a>>, Option<Box<Stml<'a>>>),
+    While(Box<Expr<'a>>, Box<Stml<'a>>),
+    Loop(Box<Stml<'a>>),
+    Break,
+    Continue,
+    Expr(Expr<'a>),
+}
