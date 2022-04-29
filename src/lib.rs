@@ -5,6 +5,18 @@ pub mod reporter;
 mod token;
 mod tokenizer;
 
+pub fn run<'a>(source: &'a str, reporter: &mut dyn reporter::Reporter<'a>) {
+    use parser::Parser;
+    use tokenizer::Tokenizer;
+
+    let mut tokenizer = Tokenizer::new(source);
+    let mut parser = Parser::new(&mut tokenizer, reporter);
+    match parser.parse() {
+        Ok(_) => {}
+        Err(_) => {}
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

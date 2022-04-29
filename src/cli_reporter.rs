@@ -1,4 +1,4 @@
-use slia::reporter::{Report, Reporter};
+use qatam::reporter::{Report, Reporter};
 
 pub struct CliReporter {
     errors_count: usize,
