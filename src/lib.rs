@@ -98,4 +98,33 @@ mod tests {
         test_invalid_expr("{الاسم ", "توقعت ':' بعد الاسم");
         test_invalid_expr("{4 ", "توقعت اسم الخاصية");
     }
+
+    #[test]
+    fn parsing_stmls() {
+        fn test_valid_stml(input: &'static str, msg: &'static str) {
+            let mut errors_tracker = ErrorsTracker::new();
+            let mut tokenizer = Tokenizer::new(input);
+            let ast = Parser::new(&mut tokenizer, &mut errors_tracker).parse();
+            assert!(ast.is_ok(), "{}", msg);
+            println!("{:#?}", ast.unwrap());
+        }
+
+        test_valid_stml(
+            "دالة أضف(الأول، الثاني) { أرجع الأول + الثاني ألقي \"هذا رائع\" }",
+            "Parses functions",
+        );
+        test_valid_stml(
+            "إن (س == 5) { إطبع(\"س تساوي 5\") } إلا { إطبع(\"س لا تساوي 5\") }",
+            "Parses if-else statements",
+        );
+        test_valid_stml(
+            "بينما (صحيح) { إطبع(\"إلا الأبد\") } كرر { إطبع(\"إطبع إلا الأبد\") أكمل قف }",
+            "Parses loops",
+        );
+        test_valid_stml(
+            "حاول { س = س / 0 } أمسك(الخطأ) { إطبع(الخطأ) }",
+            "Parses try-catch",
+        );
+        test_valid_stml("{ إطبع(عدم) }", "Parses try-catch");
+    }
 }
