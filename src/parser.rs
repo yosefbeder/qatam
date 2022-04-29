@@ -1,7 +1,7 @@
 use super::ast::{Expr, Literal, Stml};
 use super::operators::{Associativity, OPERATORS};
 use super::reporter::{Phase, Report, Reporter};
-use super::token::{Token, TokenType, INVALID_TYPES};
+use super::token::{Token, TokenType, INVALID_TYPES, STATEMENT_BOUNDRIES};
 use super::tokenizer::Tokenizer;
 use std::rc::Rc;
 
@@ -10,6 +10,7 @@ pub struct Parser<'a, 'b, 'c> {
     current: Option<Token<'b>>,
     previous: Option<Token<'b>>,
     reporter: &'c mut dyn Reporter<'b>,
+    had_error: bool,
 }
 
 impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
@@ -19,6 +20,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
             current: None,
             previous: None,
             reporter,
+            had_error: false,
         }
     }
 
@@ -517,6 +519,15 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         }
     }
 
+    fn sync(&mut self) {
+        while !self.check(TokenType::EOF) {
+            if STATEMENT_BOUNDRIES.contains(&self.peek().typ) {
+                break;
+            }
+            self.advance();
+        }
+    }
+
     pub fn parse_expr(&mut self) -> Result<Expr<'b>, ()> {
         self.advance()?;
         self.expr(9, true)
@@ -526,8 +537,18 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         let mut stmls = vec![];
         self.advance()?;
         while !self.at_end() {
-            stmls.push(self.stml()?);
+            match self.stml() {
+                Ok(stml) => stmls.push(stml),
+                Err(_) => {
+                    self.had_error = true;
+                    self.sync();
+                }
+            }
         }
-        Ok(stmls)
+        if self.had_error {
+            Err(())
+        } else {
+            Ok(stmls)
+        }
     }
 }

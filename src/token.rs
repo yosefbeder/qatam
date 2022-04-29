@@ -59,6 +59,25 @@ pub enum TokenType {
     EOF,
 }
 
+pub const INVALID_TYPES: [TokenType; 3] = [
+    TokenType::UnTermedString,
+    TokenType::InvalidNumber,
+    TokenType::Unknown,
+];
+
+pub const STATEMENT_BOUNDRIES: [TokenType; 10] = [
+    TokenType::Function,
+    TokenType::While,
+    TokenType::Loop,
+    TokenType::If,
+    TokenType::Try,
+    TokenType::OBrace,
+    TokenType::Break,
+    TokenType::Continue,
+    TokenType::Return,
+    TokenType::Throw,
+];
+
 impl From<TokenType> for usize {
     fn from(typ: TokenType) -> usize {
         match typ {
@@ -125,12 +144,6 @@ pub struct Token<'a> {
     start: usize,
     length: usize,
 }
-
-pub const INVALID_TYPES: [TokenType; 3] = [
-    TokenType::UnTermedString,
-    TokenType::InvalidNumber,
-    TokenType::Unknown,
-];
 
 impl<'a> Token<'a> {
     pub fn new(typ: TokenType, source: &'a str, start: usize, length: usize) -> Self {
