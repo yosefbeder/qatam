@@ -12,7 +12,11 @@ pub fn run<'a>(source: &'a str, reporter: &mut dyn reporter::Reporter<'a>) {
     let mut tokenizer = Tokenizer::new(source);
     let mut parser = Parser::new(&mut tokenizer, reporter);
     match parser.parse() {
-        Ok(_) => {}
+        Ok(ast) => {
+            for stml in ast {
+                print!("{}", stml);
+            }
+        }
         Err(_) => {}
     };
 }
