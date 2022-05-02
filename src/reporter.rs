@@ -18,6 +18,7 @@ impl fmt::Display for Phase {
     }
 }
 
+//TODO consider storing 'Token' in a reference counter
 #[derive(Debug)]
 pub struct Report<'a> {
     pub phase: Phase,

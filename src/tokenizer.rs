@@ -66,7 +66,7 @@ impl<'a> Tokenizer<'a> {
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.peek(0) {
             match c {
-                '\r' | '\t' | '\n' | ' ' => {
+                '\r' | '\t' | ' ' => {
                     self.next();
                     self.start = self.current;
                 }
@@ -80,6 +80,7 @@ impl<'a> Tokenizer<'a> {
 
         if let Some(c) = self.next() {
             match c {
+                '\n' => self.pop_token(TokenType::NewLine),
                 '(' => self.pop_token(TokenType::OParen),
                 ')' => self.pop_token(TokenType::CParen),
                 '{' => self.pop_token(TokenType::OBrace),

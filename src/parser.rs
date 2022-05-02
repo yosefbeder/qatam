@@ -6,9 +6,9 @@ use super::tokenizer::Tokenizer;
 use std::rc::Rc;
 
 pub struct Parser<'a, 'b, 'c> {
-    tokenizer: &'a mut Tokenizer<'b>,
-    current: Option<Token<'b>>,
+    current: Token<'b>,
     previous: Option<Token<'b>>,
+    tokenizer: &'a mut Tokenizer<'b>,
     reporter: &'c mut dyn Reporter<'b>,
     had_error: bool,
 }
@@ -16,16 +16,16 @@ pub struct Parser<'a, 'b, 'c> {
 impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     pub fn new(tokenizer: &'a mut Tokenizer<'b>, reporter: &'c mut dyn Reporter<'b>) -> Self {
         Self {
-            tokenizer,
-            current: None,
+            current: tokenizer.next_token(reporter),
             previous: None,
+            tokenizer,
             reporter,
             had_error: false,
         }
     }
 
-    fn check_current(&self) -> Result<(), ()> {
-        match &self.current {
+    fn check_previous(&self) -> Result<(), ()> {
+        match &self.previous {
             Some(token) => {
                 if INVALID_TYPES.contains(&token.typ) {
                     return Err(());
@@ -37,82 +37,76 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn advance(&mut self) -> Result<(), ()> {
-        match &self.current {
-            Some(token) => {
-                if token.typ == TokenType::EOF {
-                    return Ok(());
-                }
-            }
-            None => {}
-        };
-
-        self.previous = self.current.clone();
-        let mut next_token = self.tokenizer.next_token(self.reporter);
-
         loop {
-            if next_token.typ == TokenType::Comment {
-                next_token = self.tokenizer.next_token(self.reporter);
+            if self.current.typ == TokenType::NewLine || self.current.typ == TokenType::Comment {
+                self.current = self.tokenizer.next_token(self.reporter);
                 continue;
             }
+            if self.current.typ == TokenType::EOF {
+                break;
+            }
+
+            self.previous = Some(self.current.clone());
+            self.check_previous()?;
+            self.current = self.tokenizer.next_token(self.reporter);
             break;
         }
-        self.current = Some(next_token);
-
-        self.check_current()?;
 
         Ok(())
     }
 
     fn next(&mut self) -> Result<Token<'b>, ()> {
         self.advance()?;
-        match &self.previous {
-            Some(token) => Ok(token.clone()),
-            None => unreachable!(),
-        }
+        Ok(self.previous.as_ref().unwrap().clone())
     }
 
-    fn consume(&mut self, typ: TokenType, msg: &'static str) -> Result<(), ()> {
-        if self.check(typ) {
+    fn consume(
+        &mut self,
+        typ: TokenType,
+        msg: &'static str,
+        ignore_newlines: bool,
+    ) -> Result<(), ()> {
+        if self.check(typ, ignore_newlines) {
             self.advance()?;
             Ok(())
         } else {
-            let report = Report::new(
-                Phase::Parsing,
-                msg.to_string(),
-                match &self.current {
-                    Some(token) => token.clone(),
-                    None => unreachable!(),
-                },
-            );
+            let report = Report::new(Phase::Parsing, msg.to_string(), self.current.clone());
             self.reporter.error(report);
             Err(())
         }
     }
 
-    fn peek(&self) -> Token<'b> {
-        match &self.current {
-            Some(token) => token.clone(),
-            None => unreachable!(),
+    fn peek(&mut self, ignore_newlines: bool) -> Token<'b> {
+        loop {
+            if self.current.typ == TokenType::Comment
+                || ignore_newlines && self.current.typ == TokenType::NewLine
+            {
+                self.current = self.tokenizer.next_token(self.reporter);
+                continue;
+            }
+            break;
         }
+
+        self.current.clone()
     }
 
-    fn check(&self, typ: TokenType) -> bool {
-        if self.peek().typ == typ {
+    fn check(&mut self, typ: TokenType, ignore_newlines: bool) -> bool {
+        if self.peek(ignore_newlines).typ == typ {
             return true;
         }
 
         false
     }
 
-    fn at_end(&self) -> bool {
-        self.check(TokenType::EOF)
+    fn at_end(&mut self) -> bool {
+        self.check(TokenType::EOF, true)
     }
 
     fn exprs(&mut self) -> Result<Vec<Expr<'b>>, ()> {
         let mut items = vec![self.expr(9, true)?];
-        while self.check(TokenType::Comma) {
+        while self.check(TokenType::Comma, true) {
             self.advance()?;
-            if self.check(TokenType::CBracket) || self.check(TokenType::CParen) {
+            if self.check(TokenType::CBracket, true) || self.check(TokenType::CParen, true) {
                 break;
             }
             items.push(self.expr(9, true)?);
@@ -121,60 +115,53 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn list(&mut self) -> Result<Expr<'b>, ()> {
-        let items = if self.check(TokenType::CBracket) {
+        let items = if self.check(TokenType::CBracket, true) {
             vec![]
         } else {
             self.exprs()?
         };
 
-        self.consume(TokenType::CBracket, "توقعت ']' بعد القائمة")?;
+        self.consume(TokenType::CBracket, "توقعت ']' بعد القائمة", true)?;
 
         Ok(Expr::Literal(Literal::List(items)))
     }
+
     fn property(&mut self) -> Result<(Rc<Token<'b>>, Expr<'b>), ()> {
-        self.consume(TokenType::Identifier, "توقعت اسم الخاصية")?;
-        let key = match &self.previous {
-            Some(token) => token.clone(),
-            None => unreachable!(),
-        };
-        self.consume(TokenType::Colon, "توقعت ':' بعد الاسم")?;
+        self.consume(TokenType::Identifier, "توقعت اسم الخاصية", true)?;
+        let key = self.previous.as_ref().unwrap().clone();
+        self.consume(TokenType::Colon, "توقعت ':' بعد الاسم", true)?;
         Ok((Rc::new(key), self.expr(9, true)?))
     }
 
     fn object(&mut self) -> Result<Expr<'b>, ()> {
         let mut items;
-        if self.check(TokenType::CBrace) {
+        if self.check(TokenType::CBrace, true) {
             items = vec![]
         } else {
             items = vec![self.property()?];
-            while self.check(TokenType::Comma) {
+            while self.check(TokenType::Comma, true) {
                 self.advance()?;
-                if self.check(TokenType::CBrace) {
+                if self.check(TokenType::CBrace, true) {
                     break;
                 }
                 items.push(self.property()?);
             }
         };
 
-        self.consume(TokenType::CBrace, "توقعت '}' بعد القائمة")?;
+        self.consume(TokenType::CBrace, "توقعت '}' بعد القائمة", true)?;
 
         Ok(Expr::Literal(Literal::Object(items)))
     }
 
     fn literal(&mut self) -> Result<Expr<'b>, ()> {
-        let token = match &self.previous {
-            Some(token) => token.clone(),
-            None => unreachable!(),
-        };
+        let token = self.previous.as_ref().unwrap().clone();
 
         match token.typ {
-            TokenType::Identifier => Ok(Expr::Variable(Rc::new(token.clone()))),
-            TokenType::Number => Ok(Expr::Literal(Literal::Number(Rc::new(token.clone())))),
-            TokenType::String => Ok(Expr::Literal(Literal::String(Rc::new(token.clone())))),
-            TokenType::True | TokenType::False => {
-                Ok(Expr::Literal(Literal::Bool(Rc::new(token.clone()))))
-            }
-            TokenType::Nil => Ok(Expr::Literal(Literal::Nil(Rc::new(token.clone())))),
+            TokenType::Identifier => Ok(Expr::Variable(Rc::new(token))),
+            TokenType::Number => Ok(Expr::Literal(Literal::Number(Rc::new(token)))),
+            TokenType::String => Ok(Expr::Literal(Literal::String(Rc::new(token)))),
+            TokenType::True | TokenType::False => Ok(Expr::Literal(Literal::Bool(Rc::new(token)))),
+            TokenType::Nil => Ok(Expr::Literal(Literal::Nil(Rc::new(token)))),
             TokenType::OBracket => self.list(),
             TokenType::OBrace => self.object(),
             _ => unreachable!(),
@@ -182,23 +169,17 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn unary(&mut self) -> Result<Expr<'b>, ()> {
-        let token = match &self.previous {
-            Some(token) => token.clone(),
-            None => unreachable!(),
-        };
+        let token = self.previous.as_ref().unwrap().clone();
 
         let row: usize = token.typ.into();
-        let prefix_precedence = match OPERATORS[row].0 {
-            Some(precedence) => precedence,
-            None => unreachable!(),
-        };
+        let prefix_precedence = OPERATORS[row].0.unwrap();
         let right = self.expr(prefix_precedence, false)?;
         Ok(Expr::Unary(Rc::new(token), Box::new(right)))
     }
 
     fn group(&mut self) -> Result<Expr<'b>, ()> {
         let expr = self.expr(9, true)?;
-        self.consume(TokenType::CParen, "توقعت ')' لإغلاق المجموعة")?;
+        self.consume(TokenType::CParen, "توقعت ')' لإغلاق المجموعة", true)?;
 
         return Ok(expr);
     }
@@ -227,8 +208,8 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
             }
         };
 
-        while !self.at_end() {
-            token = self.peek();
+        while !self.check(TokenType::NewLine, false) && !self.at_end() {
+            token = self.peek(true);
 
             let row: usize = token.typ.into();
 
@@ -274,24 +255,21 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
 
                 match token.typ {
                     TokenType::OParen => {
-                        let args = if self.check(TokenType::CParen) {
+                        let args = if self.check(TokenType::CParen, true) {
                             vec![]
                         } else {
                             self.exprs()?
                         };
-                        self.consume(TokenType::CParen, "توقعت ')' بعد القائمة")?;
+                        self.consume(TokenType::CParen, "توقعت ')' بعد القائمة", true)?;
 
                         expr = Expr::Call(Rc::new(token), Box::new(expr), args);
                     }
                     //TODO>> abstract
                     TokenType::Period => {
-                        self.consume(TokenType::Identifier, "توقعت اسم الخاصية")?;
-                        let key = Expr::Variable(Rc::new(match &self.previous {
-                            Some(token) => token.clone(),
-                            None => unreachable!(),
-                        }));
+                        self.consume(TokenType::Identifier, "توقعت اسم الخاصية", true)?;
+                        let key = Expr::Variable(Rc::new(self.previous.as_ref().unwrap().clone()));
 
-                        if self.check(TokenType::Equal) {
+                        if self.check(TokenType::Equal, true) {
                             token = self.next()?;
                             if !can_assign {
                                 let report = Report::new(
@@ -315,8 +293,8 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                     }
                     TokenType::OBracket => {
                         let key = self.expr(9, true)?;
-                        self.consume(TokenType::CBracket, "توقعت ']' بعد العبارة")?;
-                        if self.check(TokenType::Equal) {
+                        self.consume(TokenType::CBracket, "توقعت ']' بعد العبارة", true)?;
+                        if self.check(TokenType::Equal, true) {
                             token = self.next()?;
                             if !can_assign {
                                 let report = Report::new(
@@ -351,64 +329,62 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
 
     fn block(&mut self) -> Result<Stml<'b>, ()> {
         let mut stmls = vec![];
-        if !self.check(TokenType::CBrace) {
-            while !self.at_end() && !self.check(TokenType::CBrace) {
+        if !self.check(TokenType::CBrace, true) {
+            while !self.at_end() && !self.check(TokenType::CBrace, true) {
                 stmls.push(self.stml()?);
             }
         };
-        self.consume(TokenType::CBrace, "توقعت '}' لنهاية المجموعة")?;
+        self.consume(TokenType::CBrace, "توقعت '}' لنهاية المجموعة", true)?;
         Ok(Stml::Block(stmls))
     }
 
     fn return_stml(&mut self) -> Result<Stml<'b>, ()> {
-        Ok(Stml::Return(Box::new(self.expr(9, true)?)))
+        if self.check(TokenType::NewLine, false) {
+            return Ok(Stml::Return(None));
+        }
+
+        Ok(Stml::Return(Some(Box::new(self.expr(9, true)?))))
     }
 
     fn throw_stml(&mut self) -> Result<Stml<'b>, ()> {
+        let token = self.previous.as_ref().unwrap().clone();
+
+        if self.check(TokenType::NewLine, false) {
+            return Ok(Stml::Throw(Rc::new(token), None));
+        }
+
         Ok(Stml::Throw(
-            Rc::new(match &self.previous {
-                Some(token) => token.clone(),
-                None => unreachable!(),
-            }),
-            Box::new(self.expr(9, true)?),
+            Rc::new(token),
+            Some(Box::new(self.expr(9, true)?)),
         ))
     }
 
     fn params(&mut self) -> Result<Vec<Rc<Token<'b>>>, ()> {
         let mut params = vec![];
 
-        if self.check(TokenType::Identifier) {
-            self.consume(TokenType::Identifier, "توقعت اسم معامل")?;
-            params.push(Rc::new(match &self.previous {
-                Some(token) => token.clone(),
-                None => unreachable!(),
-            }));
+        if self.check(TokenType::Identifier, true) {
+            self.consume(TokenType::Identifier, "توقعت اسم معامل", true)?;
+            params.push(Rc::new(self.previous.as_ref().unwrap().clone()));
         }
-        while self.check(TokenType::Comma) {
+        while self.check(TokenType::Comma, true) {
             self.advance()?;
-            if self.check(TokenType::CParen) {
+            if self.check(TokenType::CParen, true) {
                 break;
             }
-            self.consume(TokenType::Identifier, "توقعت اسم معامل")?;
-            params.push(Rc::new(match &self.previous {
-                Some(token) => token.clone(),
-                None => unreachable!(),
-            }));
+            self.consume(TokenType::Identifier, "توقعت اسم معامل", true)?;
+            params.push(Rc::new(self.previous.as_ref().unwrap().clone()));
         }
 
         Ok(params)
     }
 
     fn function_stml(&mut self) -> Result<Stml<'b>, ()> {
-        self.consume(TokenType::Identifier, "توقعت اسم الدالة")?;
-        let name = match &self.previous {
-            Some(token) => token.clone(),
-            None => unreachable!(),
-        };
-        self.consume(TokenType::OParen, "توقعت '(' قبل المعاملات")?;
+        self.consume(TokenType::Identifier, "توقعت اسم الدالة", true)?;
+        let name = self.previous.as_ref().unwrap().clone();
+        self.consume(TokenType::OParen, "توقعت '(' قبل المعاملات", true)?;
         let params = self.params()?;
-        self.consume(TokenType::CParen, "توقعت ')' بعد المعاملات")?;
-        self.consume(TokenType::OBrace, "توقعت '{' بعد المعاملات")?;
+        self.consume(TokenType::CParen, "توقعت ')' بعد المعاملات", true)?;
+        self.consume(TokenType::OBrace, "توقعت '{' بعد المعاملات", true)?;
         let body = self.block()?;
         Ok(Stml::Function(Rc::new(name), params, Box::new(body)))
     }
@@ -420,16 +396,16 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn while_stml(&mut self) -> Result<Stml<'b>, ()> {
-        self.consume(TokenType::OParen, "توقعت '(' قبل الشرط")?;
+        self.consume(TokenType::OParen, "توقعت '(' قبل الشرط", true)?;
         let condition = self.expr(9, true)?;
-        self.consume(TokenType::CParen, "توقعت ')' بعد الشرط")?;
-        self.consume(TokenType::OBrace, "توقعت '{' بعد الشرط")?;
+        self.consume(TokenType::CParen, "توقعت ')' بعد الشرط", true)?;
+        self.consume(TokenType::OBrace, "توقعت '{' بعد الشرط", true)?;
         let body = self.block()?;
         Ok(Stml::While(Box::new(condition), Box::new(body)))
     }
 
     fn loop_stml(&mut self) -> Result<Stml<'b>, ()> {
-        self.consume(TokenType::OBrace, "توقعت '{'")?;
+        self.consume(TokenType::OBrace, "توقعت '{'", true)?;
         let body = self.block()?;
         Ok(Stml::Loop(Box::new(body)))
     }
@@ -443,17 +419,18 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn try_catch(&mut self) -> Result<Stml<'b>, ()> {
-        self.consume(TokenType::OBrace, "توقعت '{'")?;
+        self.consume(TokenType::OBrace, "توقعت '{'", true)?;
         let body = self.block()?;
-        self.consume(TokenType::Catch, "توقعت 'أمسك'")?;
-        self.consume(TokenType::OParen, "توقعت '('")?;
-        let name = match &self.previous {
-            Some(token) => token.clone(),
-            None => unreachable!(),
-        };
-        self.consume(TokenType::Identifier, "توقعت اسم المعامل الذي سيحمل الخطأ")?;
-        self.consume(TokenType::CParen, "توقعت ')'")?;
-        self.consume(TokenType::OBrace, "توقعت '{'")?;
+        self.consume(TokenType::Catch, "توقعت 'أمسك'", true)?;
+        self.consume(TokenType::OParen, "توقعت '('", true)?;
+        let name = self.previous.as_ref().unwrap().clone();
+        self.consume(
+            TokenType::Identifier,
+            "توقعت اسم المعامل الذي سيحمل الخطأ",
+            true,
+        )?;
+        self.consume(TokenType::CParen, "توقعت ')'", true)?;
+        self.consume(TokenType::OBrace, "توقعت '{'", true)?;
         let catch_body = self.block()?;
         Ok(Stml::TryCatch(
             Box::new(body),
@@ -463,14 +440,14 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn if_else_stml(&mut self) -> Result<Stml<'b>, ()> {
-        self.consume(TokenType::OParen, "توقعت '(' قبل الشرط")?;
+        self.consume(TokenType::OParen, "توقعت '(' قبل الشرط", true)?;
         let condition = self.expr(9, true)?;
-        self.consume(TokenType::CParen, "توقعت ')' بعد الشرط")?;
-        self.consume(TokenType::OBrace, "توقعت '{' بعد الشرط")?;
+        self.consume(TokenType::CParen, "توقعت ')' بعد الشرط", true)?;
+        self.consume(TokenType::OBrace, "توقعت '{' بعد الشرط", true)?;
         let if_body = self.block()?;
-        let else_body = if self.check(TokenType::Else) {
+        let else_body = if self.check(TokenType::Else, true) {
             self.advance()?;
-            self.consume(TokenType::OBrace, "توقعت '{' إلا")?;
+            self.consume(TokenType::OBrace, "توقعت '{' إلا", true)?;
             Some(Box::new(self.block()?))
         } else {
             None
@@ -484,34 +461,34 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn stml(&mut self) -> Result<Stml<'b>, ()> {
-        if self.check(TokenType::Function) {
+        if self.check(TokenType::Function, true) {
             self.advance()?;
             self.function_stml()
-        } else if self.check(TokenType::While) {
+        } else if self.check(TokenType::While, true) {
             self.advance()?;
             self.while_stml()
-        } else if self.check(TokenType::Loop) {
+        } else if self.check(TokenType::Loop, true) {
             self.advance()?;
             self.loop_stml()
-        } else if self.check(TokenType::If) {
+        } else if self.check(TokenType::If, true) {
             self.advance()?;
             self.if_else_stml()
-        } else if self.check(TokenType::Try) {
+        } else if self.check(TokenType::Try, true) {
             self.advance()?;
             self.try_catch()
-        } else if self.check(TokenType::OBrace) {
+        } else if self.check(TokenType::OBrace, true) {
             self.advance()?;
             self.block()
-        } else if self.check(TokenType::Break) {
+        } else if self.check(TokenType::Break, true) {
             self.advance()?;
             self.break_stml()
-        } else if self.check(TokenType::Continue) {
+        } else if self.check(TokenType::Continue, true) {
             self.advance()?;
             self.continue_stml()
-        } else if self.check(TokenType::Return) {
+        } else if self.check(TokenType::Return, true) {
             self.advance()?;
             self.return_stml()
-        } else if self.check(TokenType::Throw) {
+        } else if self.check(TokenType::Throw, true) {
             self.advance()?;
             self.throw_stml()
         } else {
@@ -520,22 +497,20 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn sync(&mut self) {
-        while !self.check(TokenType::EOF) {
-            if STATEMENT_BOUNDRIES.contains(&self.peek().typ) {
+        while !self.check(TokenType::EOF, true) {
+            if STATEMENT_BOUNDRIES.contains(&self.peek(true).typ) {
                 break;
             }
-            self.advance();
+            self.advance().ok();
         }
     }
 
     pub fn parse_expr(&mut self) -> Result<Expr<'b>, ()> {
-        self.advance()?;
         self.expr(9, true)
     }
 
     pub fn parse(&mut self) -> Result<Vec<Stml<'b>>, ()> {
         let mut stmls = vec![];
-        self.advance()?;
         while !self.at_end() {
             match self.stml() {
                 Ok(stml) => stmls.push(stml),
