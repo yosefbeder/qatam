@@ -200,7 +200,10 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
             | TokenType::OBracket
             | TokenType::OBrace => self.literal()?,
             TokenType::Minus | TokenType::Bang => self.unary()?,
-            TokenType::OParen => self.group()?,
+            TokenType::OParen => {
+                can_assign = false;
+                self.group()?
+            }
             _ => {
                 let report = Report::new(
                     Phase::Parsing,
