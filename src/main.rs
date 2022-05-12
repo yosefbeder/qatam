@@ -1,10 +1,12 @@
 mod ast;
+mod chunk;
 mod debug;
 mod operators;
 mod parser;
 mod reporter;
 mod token;
 mod tokenizer;
+mod value;
 
 fn main() {
     use reporter::CliReporter;
