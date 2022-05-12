@@ -1,3 +1,4 @@
+use std::cmp::PartialEq;
 use std::convert::From;
 use std::fmt;
 
@@ -142,7 +143,7 @@ impl From<TokenType> for usize {
     }
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(Clone)]
 pub struct Token<'a> {
     pub typ: TokenType,
     source: &'a str,
@@ -198,6 +199,22 @@ impl<'a> Token<'a> {
             .skip(self.start)
             .take(self.length)
             .collect::<String>()
+    }
+}
+
+impl<'a> PartialEq for Token<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        match self.typ {
+            TokenType::Identifier
+            | TokenType::String
+            | TokenType::UnTermedString
+            | TokenType::Number
+            | TokenType::InvalidNumber
+            | TokenType::Unknown => {
+                self.typ == other.typ && self.get_lexeme() == other.get_lexeme()
+            }
+            _ => self.typ == other.typ,
+        }
     }
 }
 

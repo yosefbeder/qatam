@@ -1,5 +1,6 @@
 mod ast;
 mod chunk;
+mod compiler;
 mod debug;
 mod operators;
 mod parser;
@@ -45,7 +46,8 @@ fn main() {
 }
 
 pub fn run<'a>(source: &'a str, reporter: &mut dyn reporter::Reporter<'a>) {
-    use debug::debug_ast;
+    use compiler::Compiler;
+    use debug::{debug_ast, debug_bytecode};
     use parser::Parser;
     use tokenizer::Tokenizer;
 
@@ -54,6 +56,13 @@ pub fn run<'a>(source: &'a str, reporter: &mut dyn reporter::Reporter<'a>) {
     match parser.parse() {
         Ok(ast) => {
             debug_ast(&ast);
+            let mut compiler = Compiler::new(&ast, reporter);
+            match compiler.compile() {
+                Ok(function) => {
+                    debug_bytecode(&function);
+                }
+                Err(_) => {}
+            }
         }
         Err(_) => {}
     };
