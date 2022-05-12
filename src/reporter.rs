@@ -1,10 +1,11 @@
 use super::token::Token;
-use std::fmt;
+use std::{fmt, rc::Rc};
 
 #[derive(Debug)]
 pub enum Phase {
     Tokenizing,
     Parsing,
+    Compilation,
     Runtime,
 }
 
@@ -13,6 +14,7 @@ impl fmt::Display for Phase {
         match self {
             Phase::Tokenizing => write!(f, "مسحي"),
             Phase::Parsing => write!(f, "تحليلي"),
+            Phase::Compilation => write!(f, "ترجمي"),
             Phase::Runtime => write!(f, "تنفيذي"),
         }
     }
@@ -23,11 +25,11 @@ impl fmt::Display for Phase {
 pub struct Report<'a> {
     pub phase: Phase,
     pub msg: String,
-    pub token: Token<'a>,
+    pub token: Rc<Token<'a>>,
 }
 
 impl<'a> Report<'a> {
-    pub fn new(phase: Phase, msg: String, token: Token<'a>) -> Self {
+    pub fn new(phase: Phase, msg: String, token: Rc<Token<'a>>) -> Self {
         Report { phase, msg, token }
     }
 }

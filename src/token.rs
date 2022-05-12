@@ -1,7 +1,7 @@
 use std::convert::From;
 use std::fmt;
 
-pub const NUMBER: usize = 49;
+pub const NUMBER: usize = 50;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenType {
@@ -40,6 +40,7 @@ pub enum TokenType {
     If,       // إن
     Else,     // إلا
     Function, // دالة
+    Var,      // متغير
     Loop,     // كرر
     While,    // بينما
     Do,       // إفعل
@@ -66,8 +67,9 @@ pub const INVALID_TYPES: [TokenType; 3] = [
     TokenType::Unknown,
 ];
 
-pub const STATEMENT_BOUNDRIES: [TokenType; 10] = [
+pub const BOUNDARIES: [TokenType; 11] = [
     TokenType::Function,
+    TokenType::Var,
     TokenType::While,
     TokenType::Loop,
     TokenType::If,
@@ -118,33 +120,47 @@ impl From<TokenType> for usize {
             TokenType::If => 30,
             TokenType::Else => 31,
             TokenType::Function => 32,
-            TokenType::Loop => 33,
-            TokenType::While => 34,
-            TokenType::Do => 35,
-            TokenType::Break => 36,
-            TokenType::Continue => 37,
-            TokenType::Return => 38,
-            TokenType::Throw => 39,
-            TokenType::Try => 40,
-            TokenType::Catch => 41,
-            TokenType::Nil => 42,
-            TokenType::True => 43,
-            TokenType::False => 44,
-            TokenType::Number => 45,
-            TokenType::InvalidNumber => 46,
+            TokenType::Var => 33,
+            TokenType::Loop => 34,
+            TokenType::While => 35,
+            TokenType::Do => 36,
+            TokenType::Break => 37,
+            TokenType::Continue => 38,
+            TokenType::Return => 39,
+            TokenType::Throw => 40,
+            TokenType::Try => 41,
+            TokenType::Catch => 42,
+            TokenType::Nil => 43,
+            TokenType::True => 44,
+            TokenType::False => 45,
+            TokenType::Number => 46,
+            TokenType::InvalidNumber => 47,
 
-            TokenType::Unknown => 47,
-            TokenType::EOF => 48,
+            TokenType::Unknown => 48,
+            TokenType::EOF => 49,
         }
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct Token<'a> {
     pub typ: TokenType,
     source: &'a str,
     start: usize,
     length: usize,
+}
+
+impl<'a> fmt::Debug for Token<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let (line, col) = self.get_pos();
+        write!(
+            f,
+            "{{\n{2}type: {0:?},\n{2}lexeme: {1},\n{2}line: {line},\n{2}column: {col},\n}}",
+            self.typ,
+            self.get_lexeme(),
+            " ".repeat(4),
+        )
+    }
 }
 
 impl<'a> Token<'a> {

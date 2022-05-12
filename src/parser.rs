@@ -1,7 +1,7 @@
 use super::ast::{Expr, Literal, Stml};
 use super::operators::{Associativity, OPERATORS};
 use super::reporter::{Phase, Report, Reporter};
-use super::token::{Token, TokenType, INVALID_TYPES, STATEMENT_BOUNDRIES};
+use super::token::{Token, TokenType, BOUNDARIES, INVALID_TYPES};
 use super::tokenizer::Tokenizer;
 use std::rc::Rc;
 
@@ -70,7 +70,11 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
             self.advance()?;
             Ok(())
         } else {
-            let report = Report::new(Phase::Parsing, msg.to_string(), self.current.clone());
+            let report = Report::new(
+                Phase::Parsing,
+                msg.to_string(),
+                Rc::new(self.current.clone()),
+            );
             self.reporter.error(report);
             Err(())
         }
@@ -103,13 +107,13 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn exprs(&mut self) -> Result<Vec<Expr<'b>>, ()> {
-        let mut items = vec![self.expr(9, true)?];
+        let mut items = vec![self.parse_expr()?];
         while self.check(TokenType::Comma, true) {
             self.advance()?;
             if self.check(TokenType::CBracket, true) || self.check(TokenType::CParen, true) {
                 break;
             }
-            items.push(self.expr(9, true)?);
+            items.push(self.parse_expr()?);
         }
         Ok(items)
     }
@@ -130,9 +134,8 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         self.consume(TokenType::Identifier, "توقعت اسم الخاصية", true)?;
         let key = self.previous.as_ref().unwrap().clone();
         self.consume(TokenType::Colon, "توقعت ':' بعد الاسم", true)?;
-        Ok((Rc::new(key), self.expr(9, true)?))
+        Ok((Rc::new(key), self.parse_expr()?))
     }
-
     fn object(&mut self) -> Result<Expr<'b>, ()> {
         let mut items;
         if self.check(TokenType::CBrace, true) {
@@ -178,7 +181,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn group(&mut self) -> Result<Expr<'b>, ()> {
-        let expr = self.expr(9, true)?;
+        let expr = self.parse_expr()?;
         self.consume(TokenType::CParen, "توقعت ')' لإغلاق المجموعة", true)?;
 
         return Ok(expr);
@@ -202,7 +205,11 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
             TokenType::Minus | TokenType::Bang => self.unary()?,
             TokenType::OParen => self.group()?,
             _ => {
-                let report = Report::new(Phase::Parsing, "توقعت عبارة".to_string(), token.clone());
+                let report = Report::new(
+                    Phase::Parsing,
+                    "توقعت عبارة".to_string(),
+                    Rc::new(token.clone()),
+                );
                 self.reporter.error(report);
                 return Err(());
             }
@@ -230,7 +237,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                     let report = Report::new(
                         Phase::Parsing,
                         "الجانب الأيمن غير صحيح".to_string(),
-                        token.clone(),
+                        Rc::new(token.clone()),
                     );
                     self.reporter.error(report);
                     return Err(());
@@ -275,7 +282,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                                 let report = Report::new(
                                     Phase::Parsing,
                                     "الجانب الأيمن غير صحيح".to_string(),
-                                    token.clone(),
+                                    Rc::new(token.clone()),
                                 );
                                 self.reporter.error(report);
                                 return Err(());
@@ -292,15 +299,17 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                         }
                     }
                     TokenType::OBracket => {
-                        let key = self.expr(9, true)?;
+                        let key = self.parse_expr()?;
                         self.consume(TokenType::CBracket, "توقعت ']' بعد العبارة", true)?;
                         if self.check(TokenType::Equal, true) {
+                            let row: usize = self.peek(true).typ.into();
+                            let infix_precedence = OPERATORS[row].1.unwrap();
                             token = self.next()?;
                             if !can_assign {
                                 let report = Report::new(
                                     Phase::Parsing,
                                     "الجانب الأيمن غير صحيح".to_string(),
-                                    token.clone(),
+                                    Rc::new(token.clone()),
                                 );
                                 self.reporter.error(report);
                                 return Err(());
@@ -310,7 +319,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                                 Rc::new(token),
                                 Box::new(expr),
                                 Box::new(key),
-                                Box::new(self.expr(postfix_precedence, true)?),
+                                Box::new(self.expr(infix_precedence, true)?),
                             );
                         } else {
                             expr = Expr::Get(Rc::new(token), Box::new(expr), Box::new(key));
@@ -331,7 +340,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         let mut stmls = vec![];
         if !self.check(TokenType::CBrace, true) {
             while !self.at_end() && !self.check(TokenType::CBrace, true) {
-                stmls.push(self.stml()?);
+                stmls.push(self.decl()?);
             }
         };
         self.consume(TokenType::CBrace, "توقعت '}' لنهاية المجموعة", true)?;
@@ -339,11 +348,13 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn return_stml(&mut self) -> Result<Stml<'b>, ()> {
+        let token = self.previous.as_ref().unwrap().clone();
+
         if self.check(TokenType::NewLine, false) {
-            return Ok(Stml::Return(None));
+            return Ok(Stml::Throw(Rc::new(token), None));
         }
 
-        Ok(Stml::Return(Some(Box::new(self.expr(9, true)?))))
+        Ok(Stml::Return(Rc::new(token), Some(self.parse_expr()?)))
     }
 
     fn throw_stml(&mut self) -> Result<Stml<'b>, ()> {
@@ -353,10 +364,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
             return Ok(Stml::Throw(Rc::new(token), None));
         }
 
-        Ok(Stml::Throw(
-            Rc::new(token),
-            Some(Box::new(self.expr(9, true)?)),
-        ))
+        Ok(Stml::Throw(Rc::new(token), Some(self.parse_expr()?)))
     }
 
     fn params(&mut self) -> Result<Vec<Rc<Token<'b>>>, ()> {
@@ -378,7 +386,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(params)
     }
 
-    fn function_stml(&mut self) -> Result<Stml<'b>, ()> {
+    fn function_decl(&mut self) -> Result<Stml<'b>, ()> {
         self.consume(TokenType::Identifier, "توقعت اسم الدالة", true)?;
         let name = self.previous.as_ref().unwrap().clone();
         self.consume(TokenType::OParen, "توقعت '(' قبل المعاملات", true)?;
@@ -386,22 +394,22 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         self.consume(TokenType::CParen, "توقعت ')' بعد المعاملات", true)?;
         self.consume(TokenType::OBrace, "توقعت '{' بعد المعاملات", true)?;
         let body = self.block()?;
-        Ok(Stml::Function(Rc::new(name), params, Box::new(body)))
+        Ok(Stml::FunctionDecl(Rc::new(name), params, Box::new(body)))
     }
 
     fn expr_stml(&mut self) -> Result<Stml<'b>, ()> {
-        let expr = self.expr(9, true)?;
+        let expr = self.parse_expr()?;
 
         Ok(Stml::Expr(expr))
     }
 
     fn while_stml(&mut self) -> Result<Stml<'b>, ()> {
         self.consume(TokenType::OParen, "توقعت '(' قبل الشرط", true)?;
-        let condition = self.expr(9, true)?;
+        let condition = self.parse_expr()?;
         self.consume(TokenType::CParen, "توقعت ')' بعد الشرط", true)?;
         self.consume(TokenType::OBrace, "توقعت '{' بعد الشرط", true)?;
         let body = self.block()?;
-        Ok(Stml::While(Box::new(condition), Box::new(body)))
+        Ok(Stml::While(condition, Box::new(body)))
     }
 
     fn loop_stml(&mut self) -> Result<Stml<'b>, ()> {
@@ -411,11 +419,15 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn break_stml(&mut self) -> Result<Stml<'b>, ()> {
-        Ok(Stml::Break)
+        Ok(Stml::Break(Rc::new(
+            self.previous.as_ref().unwrap().clone(),
+        )))
     }
 
     fn continue_stml(&mut self) -> Result<Stml<'b>, ()> {
-        Ok(Stml::Continue)
+        Ok(Stml::Continue(Rc::new(
+            self.previous.as_ref().unwrap().clone(),
+        )))
     }
 
     fn try_catch(&mut self) -> Result<Stml<'b>, ()> {
@@ -441,7 +453,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
 
     fn if_else_stml(&mut self) -> Result<Stml<'b>, ()> {
         self.consume(TokenType::OParen, "توقعت '(' قبل الشرط", true)?;
-        let condition = self.expr(9, true)?;
+        let condition = self.parse_expr()?;
         self.consume(TokenType::CParen, "توقعت ')' بعد الشرط", true)?;
         self.consume(TokenType::OBrace, "توقعت '{' بعد الشرط", true)?;
         let if_body = self.block()?;
@@ -453,18 +465,23 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
             None
         };
 
-        Ok(Stml::IfElse(
-            Box::new(condition),
-            Box::new(if_body),
-            else_body,
-        ))
+        Ok(Stml::IfElse(condition, Box::new(if_body), else_body))
+    }
+
+    fn var_decl(&mut self) -> Result<Stml<'b>, ()> {
+        self.consume(TokenType::Identifier, "توقعت اسم المتغير", true)?;
+        let name = self.previous.as_ref().unwrap().clone();
+        let initializer = if self.check(TokenType::Equal, true) {
+            self.advance()?;
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+        Ok(Stml::VarDecl(Rc::new(name), initializer))
     }
 
     fn stml(&mut self) -> Result<Stml<'b>, ()> {
-        if self.check(TokenType::Function, true) {
-            self.advance()?;
-            self.function_stml()
-        } else if self.check(TokenType::While, true) {
+        if self.check(TokenType::While, true) {
             self.advance()?;
             self.while_stml()
         } else if self.check(TokenType::Loop, true) {
@@ -496,9 +513,21 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         }
     }
 
+    fn decl(&mut self) -> Result<Stml<'b>, ()> {
+        if self.check(TokenType::Function, true) {
+            self.advance()?;
+            self.function_decl()
+        } else if self.check(TokenType::Var, true) {
+            self.advance()?;
+            self.var_decl()
+        } else {
+            self.stml()
+        }
+    }
+
     fn sync(&mut self) {
         while !self.check(TokenType::EOF, true) {
-            if STATEMENT_BOUNDRIES.contains(&self.peek(true).typ) {
+            if BOUNDARIES.contains(&self.peek(true).typ) {
                 break;
             }
             self.advance().ok();
@@ -510,10 +539,10 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     pub fn parse(&mut self) -> Result<Vec<Stml<'b>>, ()> {
-        let mut stmls = vec![];
+        let mut decls = vec![];
         while !self.at_end() {
-            match self.stml() {
-                Ok(stml) => stmls.push(stml),
+            match self.decl() {
+                Ok(decl) => decls.push(decl),
                 Err(_) => {
                     self.had_error = true;
                     self.sync();
@@ -523,7 +552,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         if self.had_error {
             Err(())
         } else {
-            Ok(stmls)
+            Ok(decls)
         }
     }
 }

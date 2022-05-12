@@ -1,5 +1,6 @@
 use super::reporter::{Phase, Report, Reporter};
 use super::token::{Token, TokenType};
+use std::rc::Rc;
 
 pub struct Tokenizer<'a> {
     source: &'a str,
@@ -57,7 +58,7 @@ impl<'a> Tokenizer<'a> {
         let report = Report::new(
             Phase::Tokenizing,
             "رمز غير متوقع".to_string(),
-            token.clone(),
+            Rc::new(token.clone()),
         );
         reporter.error(report);
         return token;
@@ -155,7 +156,7 @@ impl<'a> Tokenizer<'a> {
                                     let report = Report::new(
                                         Phase::Tokenizing,
                                         "خطأ في إستخدام '\\'".to_string(),
-                                        token.clone(),
+                                        Rc::new(token.clone()),
                                     );
 
                                     reporter.warning(report);
@@ -170,7 +171,7 @@ impl<'a> Tokenizer<'a> {
                                 let report = Report::new(
                                     Phase::Tokenizing,
                                     "نص غير مغلق".to_string(),
-                                    token.clone(),
+                                    Rc::new(token.clone()),
                                 );
 
                                 reporter.error(report);
@@ -192,8 +193,11 @@ impl<'a> Tokenizer<'a> {
                     }
 
                     let token = self.pop_token(TokenType::UnTermedString);
-                    let report =
-                        Report::new(Phase::Tokenizing, "نص غير مغلق".to_string(), token.clone());
+                    let report = Report::new(
+                        Phase::Tokenizing,
+                        "نص غير مغلق".to_string(),
+                        Rc::new(token.clone()),
+                    );
 
                     reporter.error(report);
 
@@ -223,6 +227,7 @@ impl<'a> Tokenizer<'a> {
                                 "إن" => TokenType::If,
                                 "إلا" => TokenType::Else,
                                 "دالة" => TokenType::Function,
+                                "متغير" => TokenType::Var,
                                 "كرر" => TokenType::Loop,
                                 "بينما" => TokenType::While,
                                 "إفعل" => TokenType::Do,
@@ -277,7 +282,7 @@ impl<'a> Tokenizer<'a> {
                                 let report = Report::new(
                                     Phase::Tokenizing,
                                     "رقم خاطئ".to_string(),
-                                    token.clone(),
+                                    Rc::new(token.clone()),
                                 );
 
                                 reporter.error(report);

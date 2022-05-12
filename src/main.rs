@@ -1,48 +1,33 @@
 mod ast;
+mod debug;
 mod operators;
 mod parser;
 mod reporter;
 mod token;
 mod tokenizer;
 
-use parser::Parser;
-use reporter::{CliReporter, Reporter};
-use std::fs;
-use std::process::exit;
-use tokenizer::Tokenizer;
-
-fn run<'a>(source: &'a str, reporter: &mut dyn Reporter<'a>) {
-    let mut tokenizer = Tokenizer::new(source);
-    let mut parser = Parser::new(&mut tokenizer, reporter);
-    match parser.parse() {
-        Ok(ast) => {
-            for stml in ast {
-                print!("{}", stml);
-            }
-        }
-        Err(_) => {}
-    };
-}
-
 fn main() {
-    let mut args = std::env::args().skip(1);
+    use reporter::CliReporter;
+    use std::{env, fs, process};
+
+    let mut args = env::args().skip(1);
     let subcommand = args.next().unwrap_or_else(|| {
         eprintln!("توقعت أمراً الفرعية");
-        exit(exitcode::USAGE);
+        process::exit(exitcode::USAGE);
     });
     match subcommand.as_str() {
         "نفذ" => {
             let path = args.next().unwrap_or_else(|| {
                 eprintln!("توقعت مسار الملف");
-                exit(exitcode::USAGE);
+                process::exit(exitcode::USAGE);
             });
             if args.next().is_some() {
                 eprintln!("عدد غير متوقع من المدخلات");
-                exit(exitcode::USAGE);
+                process::exit(exitcode::USAGE);
             }
             let source = fs::read_to_string(&path).unwrap_or_else(|err| {
                 eprintln!("خطأ في قراءة الملف: {}", err);
-                exit(exitcode::IOERR);
+                process::exit(exitcode::IOERR);
             });
             let mut cli_reporter = CliReporter::new();
             run(&source, &mut cli_reporter);
@@ -52,9 +37,24 @@ fn main() {
         }
         _ => {
             eprintln!("أمر فرعي غير متوقع");
-            exit(exitcode::USAGE);
+            process::exit(exitcode::USAGE);
         }
     }
+}
+
+pub fn run<'a>(source: &'a str, reporter: &mut dyn reporter::Reporter<'a>) {
+    use debug::debug_ast;
+    use parser::Parser;
+    use tokenizer::Tokenizer;
+
+    let mut tokenizer = Tokenizer::new(source);
+    let mut parser = Parser::new(&mut tokenizer, reporter);
+    match parser.parse() {
+        Ok(ast) => {
+            debug_ast(&ast);
+        }
+        Err(_) => {}
+    };
 }
 
 #[cfg(test)]
@@ -106,7 +106,7 @@ mod tests {
                     panic!("Parsing {} failed", input);
                 }
             };
-            assert_eq!(expr.to_string(), expected);
+            assert_eq!(format!("{:?}", expr), expected);
         }
 
         fn test_invalid_expr(input: &'static str, expected_error: &'static str) {
@@ -149,34 +149,5 @@ mod tests {
         test_invalid_expr("{الاسم: ", "توقعت عبارة");
         test_invalid_expr("{الاسم ", "توقعت ':' بعد الاسم");
         test_invalid_expr("{4 ", "توقعت اسم الخاصية");
-    }
-
-    #[test]
-    fn parsing_stmls() {
-        fn test_valid_stml(input: &'static str, msg: &'static str) {
-            let mut errors_tracker = ErrorsTracker::new();
-            let mut tokenizer = Tokenizer::new(input);
-            let ast = Parser::new(&mut tokenizer, &mut errors_tracker).parse();
-            assert!(ast.is_ok(), "{}", msg);
-            println!("{:#?}", ast.unwrap());
-        }
-
-        test_valid_stml(
-            "دالة أضف(الأول، الثاني) { أرجع الأول + الثاني ألقي \"هذا رائع\" }",
-            "Parses functions",
-        );
-        test_valid_stml(
-            "إن (س == 5) { إطبع(\"س تساوي 5\") } إلا { إطبع(\"س لا تساوي 5\") }",
-            "Parses if-else statements",
-        );
-        test_valid_stml(
-            "بينما (صحيح) { إطبع(\"إلا الأبد\") } كرر { إطبع(\"إطبع إلا الأبد\") أكمل قف }",
-            "Parses loops",
-        );
-        test_valid_stml(
-            "حاول { س = س / 0 } أمسك(الخطأ) { إطبع(الخطأ) }",
-            "Parses try-catch",
-        );
-        test_valid_stml("{ إطبع(عدم) }", "Parses try-catch");
     }
 }
