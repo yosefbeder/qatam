@@ -691,7 +691,13 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
                 self.chunk.append_instr(OpCode::Pop, None);
             }
             Stml::FunctionDecl(name, params, body) => {
-                self.function_decl(Rc::clone(name), params, body)?;
+                match self.function_decl(Rc::clone(name), params, body) {
+                    Ok(_) => {}
+                    Err(_) => {
+                        self.state.borrow_mut().had_error = true;
+                        return Err(());
+                    }
+                };
             }
             Stml::VarDecl(name, initializer) => {
                 self.var_decl(Rc::clone(name), initializer)?;
