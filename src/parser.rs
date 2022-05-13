@@ -30,10 +30,10 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         self.had_error = true;
     }
 
-    fn warning_at(&mut self, token: &Token<'b>, msg: &str) {
-        let report = Report::new(Phase::Parsing, msg.to_string(), Rc::new(token.clone()));
-        self.reporter.warning(report);
-    }
+    // fn warning_at(&mut self, token: &Token<'b>, msg: &str) {
+    //     let report = Report::new(Phase::Parsing, msg.to_string(), Rc::new(token.clone()));
+    //     self.reporter.warning(report);
+    // }
 
     fn check_previous(&self) -> Result<(), ()> {
         match &self.previous {
@@ -237,7 +237,6 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
 
                 if token.typ == TokenType::Equal && !can_assign {
                     self.error_at(&token, "الجانب الأيمن غير صحيح");
-                    return Err(());
                 }
 
                 expr = Expr::Binary(
@@ -277,7 +276,6 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                             token = self.next()?;
                             if !can_assign {
                                 self.error_at(&token, "الجانب الأيمن غير صحيح");
-                                return Err(());
                             }
 
                             expr = Expr::Set(
@@ -299,7 +297,6 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                             token = self.next()?;
                             if !can_assign {
                                 self.error_at(&token, "الجانب الأيمن غير صحيح");
-                                return Err(());
                             }
 
                             expr = Expr::Set(
