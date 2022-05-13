@@ -17,6 +17,16 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
+    fn error_at(token: &Token<'a>, msg: &str, reporter: &mut dyn Reporter<'a>) {
+        let report = Report::new(Phase::Tokenizing, msg.to_string(), Rc::new(token.clone()));
+        reporter.error(report);
+    }
+
+    fn warning_at(token: &Token<'a>, msg: &str, reporter: &mut dyn Reporter<'a>) {
+        let report = Report::new(Phase::Tokenizing, msg.to_string(), Rc::new(token.clone()));
+        reporter.warning(report);
+    }
+
     //TODO improve the performance of these helper functions
     fn peek(&self, distance: usize) -> Option<char> {
         self.source.chars().nth(self.current + distance)
@@ -55,12 +65,7 @@ impl<'a> Tokenizer<'a> {
 
     fn pop_unknown_token(&mut self, reporter: &mut dyn Reporter<'a>) -> Token<'a> {
         let token = self.pop_token(TokenType::Unknown);
-        let report = Report::new(
-            Phase::Tokenizing,
-            "رمز غير متوقع".to_string(),
-            Rc::new(token.clone()),
-        );
-        reporter.error(report);
+        Self::error_at(&token, "رمز غير متوقع", reporter);
         return token;
     }
 
@@ -153,14 +158,7 @@ impl<'a> Tokenizer<'a> {
                             '"' => {
                                 if slash_misused {
                                     let token = self.pop_token(TokenType::String);
-                                    let report = Report::new(
-                                        Phase::Tokenizing,
-                                        "خطأ في إستخدام '\\'".to_string(),
-                                        Rc::new(token.clone()),
-                                    );
-
-                                    reporter.warning(report);
-
+                                    Self::warning_at(&token, "خطأ في إستخدام '\\'", reporter);
                                     return token;
                                 } else {
                                     return self.pop_token(TokenType::String);
@@ -168,14 +166,7 @@ impl<'a> Tokenizer<'a> {
                             }
                             '\n' => {
                                 let token = self.pop_token(TokenType::UnTermedString);
-                                let report = Report::new(
-                                    Phase::Tokenizing,
-                                    "نص غير مغلق".to_string(),
-                                    Rc::new(token.clone()),
-                                );
-
-                                reporter.error(report);
-
+                                Self::error_at(&token, "نص غير مغلق", reporter);
                                 return token;
                             }
                             '\\' => match self.peek(0) {
@@ -193,14 +184,7 @@ impl<'a> Tokenizer<'a> {
                     }
 
                     let token = self.pop_token(TokenType::UnTermedString);
-                    let report = Report::new(
-                        Phase::Tokenizing,
-                        "نص غير مغلق".to_string(),
-                        Rc::new(token.clone()),
-                    );
-
-                    reporter.error(report);
-
+                    Self::error_at(&token, "نص غير مغلق", reporter);
                     return token;
                 }
                 '#' => {
@@ -279,14 +263,7 @@ impl<'a> Tokenizer<'a> {
                                 }
 
                                 let token = self.pop_token(TokenType::InvalidNumber);
-                                let report = Report::new(
-                                    Phase::Tokenizing,
-                                    "رقم خاطئ".to_string(),
-                                    Rc::new(token.clone()),
-                                );
-
-                                reporter.error(report);
-
+                                Self::error_at(&token, "رقم خاطئ", reporter);
                                 return token;
                             }
                         }

@@ -150,6 +150,17 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         }
     }
 
+    fn error_at(&mut self, token: Rc<Token<'a>>, msg: &str) {
+        let report = Report::new(Phase::Compilation, msg.to_string(), token);
+        self.reporter.error(report);
+        self.state.borrow_mut().had_error = true;
+    }
+
+    // fn warning_at(&self, token: &Token<'b>, msg: &str) {
+    //     let report = Report::new(Phase::Parsing, msg.to_string(), Rc::new(token.clone()));
+    //     self.reporter.warning(report);
+    // }
+
     fn in_global_scope(&self) -> bool {
         self.typ == CompilerType::Script && self.state.borrow().scope_depth == 0
     }
@@ -189,22 +200,18 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             return Ok(());
         }
 
-        {
-            let locals = &self.state.borrow().locals;
-            let mut iter = locals.iter().rev();
-            while let Some(local) = iter.next() {
-                if local.depth != scope_depth {
-                    break;
-                }
-                if local.name == token {
-                    let report = Report::new(
-                        Phase::Compilation,
-                        "لا يمكنك تعريف نفس المتغير أكثر من مرة في نفس المجموعة".to_string(),
-                        Rc::clone(&token),
-                    );
-                    self.reporter.error(report);
-                    return Err(());
-                }
+        let locals = &self.state.borrow().locals.clone();
+        let mut iter = locals.iter().rev();
+        while let Some(local) = iter.next() {
+            if local.depth != scope_depth {
+                break;
+            }
+            if local.name == token {
+                self.error_at(
+                    token,
+                    "لا يمكنك تعريف نفس المتغير أكثر من مرة في نفس المجموعة",
+                );
+                return Err(());
             }
         }
 
@@ -470,12 +477,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         let mut count = 0;
         for arg in args {
             if count == 0xff {
-                let report = Report::new(
-                    Phase::Compilation,
-                    "عدد كثر من المدخلات".to_string(),
-                    Rc::clone(&token),
-                );
-                self.reporter.error(report);
+                self.error_at(token, "عدد كثر من المدخلات");
                 return Err(());
             }
             self.expr(arg)?;
@@ -510,12 +512,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         //TODO define the names of the params as local variables for the inner compiler
         for param in params {
             if self.arity == 0xff {
-                let report = Report::new(
-                    Phase::Compilation,
-                    "عدد كثير من المعاملات".to_string(),
-                    Rc::clone(&param),
-                );
-                self.reporter.error(report);
+                self.error_at(Rc::clone(param), "عدد كثير من المعاملات");
                 return Err(());
             }
             self.define_variable(Rc::clone(param))?;
@@ -568,12 +565,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
     fn return_stml(&mut self, token: Rc<Token<'a>>, value: &Option<Expr<'a>>) -> Result<(), ()> {
         if !self.in_function() {
-            let report = Report::new(
-                Phase::Compilation,
-                "لا يمكنك استخدام 'أرجع' خارج دالة".to_string(),
-                Rc::clone(&token),
-            );
-            self.reporter.error(report);
+            self.error_at(token, "لا يمكنك استخدام 'أرجع' خارج دالة");
             return Err(());
         }
 
@@ -666,12 +658,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
     fn break_stml(&mut self, token: Rc<Token<'a>>) -> Result<(), ()> {
         if self.state.borrow().loops.is_empty() {
-            let report = Report::new(
-                Phase::Compilation,
-                "لا يمكنك استخدام 'قف' خارج حلقة تكرارية".to_string(),
-                Rc::clone(&token),
-            );
-            self.reporter.error(report);
+            self.error_at(token, "لا يمكنك استخدام 'قف' خارج حلقة تكرارية");
             return Err(());
         }
 
@@ -688,12 +675,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
     fn continue_stml(&mut self, token: Rc<Token<'a>>) -> Result<(), ()> {
         if self.state.borrow().loops.is_empty() {
-            let report = Report::new(
-                Phase::Compilation,
-                "لا يمكنك استخدام 'أكمل' خارج حلقة تكرارية".to_string(),
-                Rc::clone(&token),
-            );
-            self.reporter.error(report);
+            self.error_at(token, "لا يمكنك استخدام 'أكمل' خارج حلقة تكرارية");
             return Err(());
         }
 
@@ -737,10 +719,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
     pub fn compile(&mut self) -> Result<Function<'a>, ()> {
         for stml in self.ast {
-            match self.stml(stml) {
-                Ok(_) => {}
-                Err(_) => self.state.borrow_mut().had_error = true,
-            }
+            self.stml(stml).ok();
         }
 
         if self.typ == CompilerType::Function {

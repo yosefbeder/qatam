@@ -24,6 +24,17 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         }
     }
 
+    fn error_at(&mut self, token: &Token<'b>, msg: &str) {
+        let report = Report::new(Phase::Parsing, msg.to_string(), Rc::new(token.clone()));
+        self.reporter.error(report);
+        self.had_error = true;
+    }
+
+    fn warning_at(&mut self, token: &Token<'b>, msg: &str) {
+        let report = Report::new(Phase::Parsing, msg.to_string(), Rc::new(token.clone()));
+        self.reporter.warning(report);
+    }
+
     fn check_previous(&self) -> Result<(), ()> {
         match &self.previous {
             Some(token) => {
@@ -65,12 +76,8 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
             self.advance()?;
             Ok(())
         } else {
-            let report = Report::new(
-                Phase::Parsing,
-                msg.to_string(),
-                Rc::new(self.current.clone()),
-            );
-            self.reporter.error(report);
+            let token = self.current.clone();
+            self.error_at(&token, msg);
             Err(())
         }
     }
@@ -205,12 +212,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                 self.group()?
             }
             _ => {
-                let report = Report::new(
-                    Phase::Parsing,
-                    "توقعت عبارة".to_string(),
-                    Rc::new(token.clone()),
-                );
-                self.reporter.error(report);
+                self.error_at(&token, "توقعت عبارة");
                 return Err(());
             }
         };
@@ -234,12 +236,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                 self.advance()?;
 
                 if token.typ == TokenType::Equal && !can_assign {
-                    let report = Report::new(
-                        Phase::Parsing,
-                        "الجانب الأيمن غير صحيح".to_string(),
-                        Rc::new(token.clone()),
-                    );
-                    self.reporter.error(report);
+                    self.error_at(&token, "الجانب الأيمن غير صحيح");
                     return Err(());
                 }
 
@@ -279,12 +276,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                         if self.check(TokenType::Equal) {
                             token = self.next()?;
                             if !can_assign {
-                                let report = Report::new(
-                                    Phase::Parsing,
-                                    "الجانب الأيمن غير صحيح".to_string(),
-                                    Rc::new(token.clone()),
-                                );
-                                self.reporter.error(report);
+                                self.error_at(&token, "الجانب الأيمن غير صحيح");
                                 return Err(());
                             }
 
@@ -306,12 +298,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                             let infix_precedence = OPERATORS[row].1.unwrap();
                             token = self.next()?;
                             if !can_assign {
-                                let report = Report::new(
-                                    Phase::Parsing,
-                                    "الجانب الأيمن غير صحيح".to_string(),
-                                    Rc::new(token.clone()),
-                                );
-                                self.reporter.error(report);
+                                self.error_at(&token, "الجانب الأيمن غير صحيح");
                                 return Err(());
                             }
 
@@ -540,7 +527,6 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
             match self.decl() {
                 Ok(decl) => decls.push(decl),
                 Err(_) => {
-                    self.had_error = true;
                     self.sync();
                 }
             }
