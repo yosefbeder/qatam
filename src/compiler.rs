@@ -1,6 +1,6 @@
 use super::{
     ast::{Expr, Literal, Stml},
-    chunk::{Chunk, OpCode},
+    chunk::{Chunk, Instruction},
     reporter::{Phase, Report, Reporter},
     token::{Token, TokenType},
     value::{Function, Value},
@@ -194,9 +194,9 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
         if self.in_global_scope() {
             self.chunk
-                .append_constant(Value::String(token.get_lexeme()), Some(Rc::clone(&token)))?;
+                .emit_const(Value::String(token.get_lexeme()), Some(Rc::clone(&token)))?;
             self.chunk
-                .append_instr(OpCode::DefineGlobal, Some(Rc::clone(&token)));
+                .emit_instr(Instruction::DefineGlobal, Some(Rc::clone(&token)));
             return Ok(());
         }
 
@@ -222,9 +222,9 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
     fn set_global(&mut self, token: Rc<Token<'a>>) -> Result<(), ()> {
         self.chunk
-            .append_constant(Value::String(token.get_lexeme()), Some(Rc::clone(&token)))?;
+            .emit_const(Value::String(token.get_lexeme()), Some(Rc::clone(&token)))?;
         self.chunk
-            .append_instr(OpCode::SetGlobal, Some(Rc::clone(&token)));
+            .emit_instr(Instruction::SetGlobal, Some(Rc::clone(&token)));
         return Ok(());
     }
 
@@ -237,8 +237,8 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         match state.resolve_local(Rc::clone(&token)) {
             Some(index) => {
                 self.chunk
-                    .append_instr(OpCode::SetLocal, Some(Rc::clone(&token)));
-                self.chunk.append_u8_oper(index as u8);
+                    .emit_instr(Instruction::SetLocal, Some(Rc::clone(&token)));
+                self.chunk.emit_byte(index as u8);
                 return Ok(());
             }
             _ => {}
@@ -249,8 +249,8 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         match state.resolve_up_value(Rc::clone(&token)) {
             Some(index) => {
                 self.chunk
-                    .append_instr(OpCode::SetUpValue, Some(Rc::clone(&token)));
-                self.chunk.append_u8_oper(index as u8);
+                    .emit_instr(Instruction::SetUpValue, Some(Rc::clone(&token)));
+                self.chunk.emit_byte(index as u8);
                 return Ok(());
             }
             _ => {}
@@ -265,8 +265,8 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         match state.resolve_local(Rc::clone(&token)) {
             Some(index) => {
                 self.chunk
-                    .append_instr(OpCode::GetLocal, Some(Rc::clone(&token)));
-                self.chunk.append_u8_oper(index as u8);
+                    .emit_instr(Instruction::GetLocal, Some(Rc::clone(&token)));
+                self.chunk.emit_byte(index as u8);
                 return Ok(());
             }
             _ => {}
@@ -277,8 +277,8 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         match state.resolve_up_value(Rc::clone(&token)) {
             Some(index) => {
                 self.chunk
-                    .append_instr(OpCode::GetUpValue, Some(Rc::clone(&token)));
-                self.chunk.append_u8_oper(index as u8);
+                    .emit_instr(Instruction::GetUpValue, Some(Rc::clone(&token)));
+                self.chunk.emit_byte(index as u8);
                 return Ok(());
             }
             _ => {}
@@ -286,22 +286,22 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         drop(state);
 
         self.chunk
-            .append_constant(Value::String(token.get_lexeme()), Some(Rc::clone(&token)))?;
+            .emit_const(Value::String(token.get_lexeme()), Some(Rc::clone(&token)))?;
         self.chunk
-            .append_instr(OpCode::GetGlobal, Some(Rc::clone(&token)));
+            .emit_instr(Instruction::GetGlobal, Some(Rc::clone(&token)));
         Ok(())
     }
 
     fn literal(&mut self, literal: &Literal<'a>) -> Result<(), ()> {
         match literal {
             Literal::Number(token) => {
-                self.chunk.append_constant(
+                self.chunk.emit_const(
                     Value::Number(token.get_lexeme().parse().unwrap()),
                     Some(Rc::clone(token)),
                 )?;
             }
             Literal::Bool(token) => {
-                self.chunk.append_constant(
+                self.chunk.emit_const(
                     Value::Bool(match token.typ {
                         TokenType::True => true,
                         TokenType::False => false,
@@ -312,11 +312,10 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             }
             Literal::String(token) => {
                 self.chunk
-                    .append_constant(Value::String(token.get_lexeme()), Some(Rc::clone(token)))?;
+                    .emit_const(Value::String(token.get_lexeme()), Some(Rc::clone(token)))?;
             }
             Literal::Nil(token) => {
-                self.chunk
-                    .append_constant(Value::Nil, Some(Rc::clone(token)))?;
+                self.chunk.emit_const(Value::Nil, Some(Rc::clone(token)))?;
             }
             Literal::List(exprs) => {
                 let mut size = 0;
@@ -324,21 +323,19 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
                     self.expr(expr)?;
                     size += 1;
                 }
-                self.chunk.append_instr(OpCode::BuildList, None);
-                self.chunk.append_u8_oper(size);
+                self.chunk.emit_instr(Instruction::BuildList, None);
+                self.chunk.emit_byte(size);
             }
             Literal::Object(items) => {
                 let mut size = 0;
                 for item in items {
-                    self.chunk.append_constant(
-                        Value::String(item.0.get_lexeme()),
-                        Some(Rc::clone(&item.0)),
-                    )?;
+                    self.chunk
+                        .emit_const(Value::String(item.0.get_lexeme()), Some(Rc::clone(&item.0)))?;
                     self.expr(&item.1)?;
                     size += 1;
                 }
-                self.chunk.append_instr(OpCode::BuildObject, None);
-                self.chunk.append_u8_oper(size);
+                self.chunk.emit_instr(Instruction::BuildObject, None);
+                self.chunk.emit_byte(size);
             }
         };
         Ok(())
@@ -349,10 +346,11 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         match op.typ {
             TokenType::Minus => {
                 self.chunk
-                    .append_instr(OpCode::Negate, Some(Rc::clone(&op)));
+                    .emit_instr(Instruction::Negate, Some(Rc::clone(&op)));
             }
             TokenType::Bang => {
-                self.chunk.append_instr(OpCode::Not, Some(Rc::clone(&op)));
+                self.chunk
+                    .emit_instr(Instruction::Not, Some(Rc::clone(&op)));
             }
             _ => unreachable!(),
         }
@@ -377,19 +375,21 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             TokenType::And => {
                 let false_jump = self
                     .chunk
-                    .append_jump(OpCode::JumpIfFalse, Some(Rc::clone(&op)));
-                self.chunk.append_instr(OpCode::Pop, Some(Rc::clone(&op)));
+                    .emit_jump(Instruction::JumpIfFalse, Some(Rc::clone(&op)));
+                self.chunk
+                    .emit_instr(Instruction::Pop, Some(Rc::clone(&op)));
                 self.expr(right)?;
-                self.chunk.set_relative_jump(false_jump);
+                self.chunk.patch_jump(false_jump);
                 return Ok(());
             }
             TokenType::Or => {
                 let true_jump = self
                     .chunk
-                    .append_jump(OpCode::JumpIfTrue, Some(Rc::clone(&op)));
-                self.chunk.append_instr(OpCode::Pop, Some(Rc::clone(&op)));
+                    .emit_jump(Instruction::JumpIfTrue, Some(Rc::clone(&op)));
+                self.chunk
+                    .emit_instr(Instruction::Pop, Some(Rc::clone(&op)));
                 self.expr(right)?;
-                self.chunk.set_relative_jump(true_jump);
+                self.chunk.patch_jump(true_jump);
                 return Ok(());
             }
             _ => {}
@@ -398,45 +398,50 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         self.expr(right)?;
         match op.typ {
             TokenType::Plus => {
-                self.chunk.append_instr(OpCode::Add, Some(Rc::clone(&op)));
+                self.chunk
+                    .emit_instr(Instruction::Add, Some(Rc::clone(&op)));
             }
             TokenType::Minus => {
                 self.chunk
-                    .append_instr(OpCode::Subtract, Some(Rc::clone(&op)));
+                    .emit_instr(Instruction::Subtract, Some(Rc::clone(&op)));
             }
             TokenType::Star => {
                 self.chunk
-                    .append_instr(OpCode::Multiply, Some(Rc::clone(&op)));
+                    .emit_instr(Instruction::Multiply, Some(Rc::clone(&op)));
             }
             TokenType::Slash => {
                 self.chunk
-                    .append_instr(OpCode::Divide, Some(Rc::clone(&op)));
+                    .emit_instr(Instruction::Divide, Some(Rc::clone(&op)));
             }
             TokenType::Percent => {
                 self.chunk
-                    .append_instr(OpCode::Remainder, Some(Rc::clone(&op)));
+                    .emit_instr(Instruction::Remainder, Some(Rc::clone(&op)));
             }
             TokenType::DEqual => {
-                self.chunk.append_instr(OpCode::Equal, Some(Rc::clone(&op)));
+                self.chunk
+                    .emit_instr(Instruction::Equal, Some(Rc::clone(&op)));
             }
             TokenType::BangEqual => {
-                self.chunk.append_instr(OpCode::Equal, Some(Rc::clone(&op)));
-                self.chunk.append_instr(OpCode::Not, Some(Rc::clone(&op)));
+                self.chunk
+                    .emit_instr(Instruction::Equal, Some(Rc::clone(&op)));
+                self.chunk
+                    .emit_instr(Instruction::Not, Some(Rc::clone(&op)));
             }
             TokenType::Greater => {
                 self.chunk
-                    .append_instr(OpCode::Greater, Some(Rc::clone(&op)));
+                    .emit_instr(Instruction::Greater, Some(Rc::clone(&op)));
             }
             TokenType::GreaterEqual => {
                 self.chunk
-                    .append_instr(OpCode::GreaterEqual, Some(Rc::clone(&op)));
+                    .emit_instr(Instruction::GreaterEqual, Some(Rc::clone(&op)));
             }
             TokenType::Less => {
-                self.chunk.append_instr(OpCode::Less, Some(Rc::clone(&op)));
+                self.chunk
+                    .emit_instr(Instruction::Less, Some(Rc::clone(&op)));
             }
             TokenType::LessEqual => {
                 self.chunk
-                    .append_instr(OpCode::LessEqual, Some(Rc::clone(&op)));
+                    .emit_instr(Instruction::LessEqual, Some(Rc::clone(&op)));
             }
             _ => unreachable!(),
         }
@@ -448,7 +453,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         self.expr(instance)?;
         self.expr(key)?;
         self.chunk
-            .append_instr(OpCode::Get, Some(Rc::clone(&token)));
+            .emit_instr(Instruction::Get, Some(Rc::clone(&token)));
         Ok(())
     }
 
@@ -463,7 +468,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         self.expr(instance)?;
         self.expr(key)?;
         self.chunk
-            .append_instr(OpCode::Set, Some(Rc::clone(&token)));
+            .emit_instr(Instruction::Set, Some(Rc::clone(&token)));
         Ok(())
     }
 
@@ -484,8 +489,8 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             count += 1;
         }
         self.chunk
-            .append_instr(OpCode::Call, Some(Rc::clone(&token)));
-        self.chunk.append_u8_oper(count as u8);
+            .emit_instr(Instruction::Call, Some(Rc::clone(&token)));
+        self.chunk.emit_byte(count as u8);
         Ok(())
     }
 
@@ -536,18 +541,18 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         );
         function_compiler.define_variable(Rc::clone(&name))?;
         function_compiler.define_params(params)?;
-        self.chunk.append_constant(
+        self.chunk.emit_const(
             Value::Function(Rc::new(function_compiler.compile()?)),
             Some(Rc::clone(&name)),
         )?;
         //TODO consider not appending regular functions as closures optimization
         let up_values = &function_compiler.state.borrow().up_values;
         self.chunk
-            .append_instr(OpCode::Closure, Some(Rc::clone(&name)));
-        self.chunk.append_u8_oper(up_values.len() as u8); //TODO make sure this it's convertable to u8
+            .emit_instr(Instruction::Closure, Some(Rc::clone(&name)));
+        self.chunk.emit_byte(up_values.len() as u8); //TODO make sure this it's convertable to u8
         for up_value in up_values {
-            self.chunk.append_u8_oper(up_value.is_local as u8);
-            self.chunk.append_u8_oper(up_value.index as u8);
+            self.chunk.emit_byte(up_value.is_local as u8);
+            self.chunk.emit_byte(up_value.index as u8);
         }
         self.define_variable(Rc::clone(&name))?;
         Ok(())
@@ -557,7 +562,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         match initializer {
             Some(expr) => self.expr(expr)?,
             None => {
-                self.chunk.append_instr(OpCode::Nil, None);
+                self.chunk.emit_instr(Instruction::Nil, None);
             }
         };
         self.define_variable(Rc::clone(&name))
@@ -573,9 +578,9 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             Some(expr) => {
                 self.expr(&*expr)?;
             }
-            None => self.chunk.append_instr(OpCode::Nil, None),
+            None => self.chunk.emit_instr(Instruction::Nil, None),
         }
-        self.chunk.append_instr(OpCode::Return, None);
+        self.chunk.emit_instr(Instruction::Return, None);
         Ok(())
     }
 
@@ -602,19 +607,19 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         else_branch: &Option<Box<Stml<'a>>>,
     ) -> Result<(), ()> {
         self.expr(condition)?;
-        let false_jump = self.chunk.append_jump(OpCode::JumpIfFalse, None);
-        self.chunk.append_instr(OpCode::Pop, None);
+        let false_jump = self.chunk.emit_jump(Instruction::JumpIfFalse, None);
+        self.chunk.emit_instr(Instruction::Pop, None);
         self.stml(then_branch)?;
-        let true_jump = self.chunk.append_jump(OpCode::Jump, None);
-        self.chunk.set_relative_jump(false_jump);
-        self.chunk.append_instr(OpCode::Pop, None);
+        let true_jump = self.chunk.emit_jump(Instruction::Jump, None);
+        self.chunk.patch_jump(false_jump);
+        self.chunk.emit_instr(Instruction::Pop, None);
         match else_branch {
             Some(stml) => {
                 self.stml(stml)?;
             }
             None => {}
         }
-        self.chunk.set_relative_jump(true_jump);
+        self.chunk.patch_jump(true_jump);
         Ok(())
     }
 
@@ -627,7 +632,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
     fn end_loop(&mut self) {
         let loop_ = self.state.borrow_mut().loops.pop().unwrap();
         for break_ in loop_.breaks {
-            self.chunk.set_relative_jump(break_);
+            self.chunk.patch_jump(break_);
         }
     }
 
@@ -635,12 +640,12 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         let start = self.start_loop().start;
 
         self.expr(condition)?;
-        let false_jump = self.chunk.append_jump(OpCode::JumpIfFalse, None);
-        self.chunk.append_instr(OpCode::Pop, None);
+        let false_jump = self.chunk.emit_jump(Instruction::JumpIfFalse, None);
+        self.chunk.emit_instr(Instruction::Pop, None);
         self.stml(body)?;
-        self.chunk.append_loop(start, None);
-        self.chunk.set_relative_jump(false_jump);
-        self.chunk.append_instr(OpCode::Pop, None);
+        self.chunk.emit_loop(start, None);
+        self.chunk.patch_jump(false_jump);
+        self.chunk.emit_instr(Instruction::Pop, None);
 
         self.end_loop();
         Ok(())
@@ -650,7 +655,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         let start = self.start_loop().start;
 
         self.stml(body)?;
-        self.chunk.append_loop(start, None);
+        self.chunk.emit_loop(start, None);
 
         self.end_loop();
         Ok(())
@@ -662,7 +667,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             return Err(());
         }
 
-        let index = self.chunk.append_jump(OpCode::Jump, Some(token));
+        let index = self.chunk.emit_jump(Instruction::Jump, Some(token));
         self.state
             .borrow_mut()
             .loops
@@ -680,7 +685,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         }
 
         let start = self.state.borrow().loops.last().unwrap().start;
-        self.chunk.append_loop(start, None);
+        self.chunk.emit_loop(start, None);
         Ok(())
     }
 
@@ -688,7 +693,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         match stml {
             Stml::Expr(expr) => {
                 self.expr(expr)?;
-                self.chunk.append_instr(OpCode::Pop, None);
+                self.chunk.emit_instr(Instruction::Pop, None);
             }
             Stml::FunctionDecl(name, params, body) => {
                 match self.function_decl(Rc::clone(name), params, body) {
@@ -729,8 +734,8 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         }
 
         if self.typ == CompilerType::Function {
-            self.chunk.append_instr(OpCode::Nil, None);
-            self.chunk.append_instr(OpCode::Return, None);
+            self.chunk.emit_instr(Instruction::Nil, None);
+            self.chunk.emit_instr(Instruction::Return, None);
         }
 
         if self.state.borrow().had_error {

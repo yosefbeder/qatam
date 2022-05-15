@@ -9,7 +9,7 @@ use std::{
 use std::fmt;
 
 #[derive(Clone, Copy)]
-pub enum OpCode {
+pub enum Instruction {
     Push,
     Pop,
     Negate,
@@ -48,7 +48,7 @@ pub enum OpCode {
     BuildObject,
 }
 
-impl Into<u8> for OpCode {
+impl Into<u8> for Instruction {
     fn into(self) -> u8 {
         match self {
             Self::Push => 0,
@@ -91,7 +91,7 @@ impl Into<u8> for OpCode {
     }
 }
 
-impl TryFrom<u8> for OpCode {
+impl TryFrom<u8> for Instruction {
     type Error = ();
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
@@ -138,7 +138,7 @@ impl TryFrom<u8> for OpCode {
 }
 
 #[cfg(feature = "debug-bytecode")]
-impl fmt::Debug for OpCode {
+impl fmt::Debug for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -203,37 +203,37 @@ impl<'a> Chunk<'a> {
 
     #[cfg(feature = "debug-bytecode")]
     fn disassemble_instr_at(&self, offset: usize) -> (String, usize) {
-        let op_code = OpCode::try_from(self.bytes[offset]).unwrap();
+        let instr = Instruction::try_from(self.bytes[offset]).unwrap();
         let mut buffer = String::new();
-        buffer += format!("{:0>5} {:?}", offset, op_code).as_str();
+        buffer += format!("{:0>5} {:?}", offset, instr).as_str();
 
-        match op_code {
-            OpCode::Push
-            | OpCode::Pop
-            | OpCode::Negate
-            | OpCode::Add
-            | OpCode::Subtract
-            | OpCode::Multiply
-            | OpCode::Divide
-            | OpCode::Remainder
-            | OpCode::Not
-            | OpCode::Equal
-            | OpCode::Greater
-            | OpCode::GreaterEqual
-            | OpCode::Less
-            | OpCode::LessEqual
-            | OpCode::Return
-            | OpCode::GetGlobal
-            | OpCode::SetGlobal
-            | OpCode::DefineGlobal
-            | OpCode::Nil
-            | OpCode::Get
-            | OpCode::Set
-            | OpCode::CloseUpValue => {
+        match instr {
+            Instruction::Push
+            | Instruction::Pop
+            | Instruction::Negate
+            | Instruction::Add
+            | Instruction::Subtract
+            | Instruction::Multiply
+            | Instruction::Divide
+            | Instruction::Remainder
+            | Instruction::Not
+            | Instruction::Equal
+            | Instruction::Greater
+            | Instruction::GreaterEqual
+            | Instruction::Less
+            | Instruction::LessEqual
+            | Instruction::Return
+            | Instruction::GetGlobal
+            | Instruction::SetGlobal
+            | Instruction::DefineGlobal
+            | Instruction::Nil
+            | Instruction::Get
+            | Instruction::Set
+            | Instruction::CloseUpValue => {
                 buffer += "\n";
                 return (buffer, 1);
             }
-            OpCode::Constant8 => {
+            Instruction::Constant8 => {
                 let index = self.bytes[offset + 1] as usize;
                 let constant = &self.constants[index];
                 buffer += format!("{} ({})\n", index, constant).as_str();
@@ -243,7 +243,7 @@ impl<'a> Chunk<'a> {
                 }
                 return (buffer, 2);
             }
-            OpCode::Constant16 => {
+            Instruction::Constant16 => {
                 let index = ((self.bytes[offset + 2] as u16) << 8 | (self.bytes[offset + 1] as u16))
                     as usize;
                 let constant = &self.constants[index];
@@ -254,24 +254,27 @@ impl<'a> Chunk<'a> {
                 }
                 return (buffer, 3);
             }
-            OpCode::Jump | OpCode::JumpIfFalse | OpCode::JumpIfTrue | OpCode::Loop => {
+            Instruction::Jump
+            | Instruction::JumpIfFalse
+            | Instruction::JumpIfTrue
+            | Instruction::Loop => {
                 let offset = ((self.bytes[offset + 2] as u16) << 8
                     | (self.bytes[offset + 1] as u16)) as usize;
                 buffer += format!("{}\n", offset).as_str();
                 return (buffer, 3);
             }
-            OpCode::Call
-            | OpCode::GetLocal
-            | OpCode::SetLocal
-            | OpCode::GetUpValue
-            | OpCode::SetUpValue
-            | OpCode::BuildList
-            | OpCode::BuildObject => {
+            Instruction::Call
+            | Instruction::GetLocal
+            | Instruction::SetLocal
+            | Instruction::GetUpValue
+            | Instruction::SetUpValue
+            | Instruction::BuildList
+            | Instruction::BuildObject => {
                 let oper = self.bytes[offset + 1] as usize;
                 buffer += format!("{}\n", oper).as_str();
                 return (buffer, 2);
             }
-            OpCode::Closure => {
+            Instruction::Closure => {
                 let up_values_count = self.bytes[offset + 1] as usize;
                 buffer += format!("{}\n", up_values_count).as_str();
 
@@ -301,26 +304,26 @@ impl<'a> Chunk<'a> {
         buffer
     }
 
-    pub fn append_instr(&mut self, op_code: OpCode, token: Option<Rc<Token<'a>>>) {
-        self.bytes.push(op_code.into());
+    pub fn emit_instr(&mut self, instr: Instruction, token: Option<Rc<Token<'a>>>) {
+        self.bytes.push(instr.into());
         self.tokens.push(token);
     }
 
-    pub fn append_u16_oper(&mut self, value: u16) {
+    pub fn emit_bytes(&mut self, value: u16) {
         self.bytes.push(value as u8);
         self.bytes.push((value >> 8) as u8);
     }
 
-    pub fn append_u8_oper(&mut self, value: u8) {
+    pub fn emit_byte(&mut self, value: u8) {
         self.bytes.push(value);
     }
 
-    fn set_u16(&mut self, index: usize, value: u16) {
+    fn patch_bytes(&mut self, index: usize, value: u16) {
         self.bytes[index] = value as u8;
         self.bytes[index + 1] = (value >> 8) as u8;
     }
 
-    pub fn append_constant(
+    pub fn emit_const(
         &mut self,
         value: Value<'a>,
         token: Option<Rc<Token<'a>>>,
@@ -329,11 +332,11 @@ impl<'a> Chunk<'a> {
         self.constants.push(value);
 
         if index <= 0xff {
-            self.append_instr(OpCode::Constant8, token);
-            self.append_u8_oper(index as u8);
+            self.emit_instr(Instruction::Constant8, token);
+            self.emit_byte(index as u8);
         } else if index < 0xffff {
-            self.append_instr(OpCode::Constant16, token);
-            self.append_u16_oper(index as u16);
+            self.emit_instr(Instruction::Constant16, token);
+            self.emit_bytes(index as u16);
         } else {
             //TODO find any way to report this error
             return Err(());
@@ -343,20 +346,20 @@ impl<'a> Chunk<'a> {
     }
 
     // returns the index of the jump instruction
-    pub fn append_jump(&mut self, op_code: OpCode, token: Option<Rc<Token<'a>>>) -> usize {
+    pub fn emit_jump(&mut self, instr: Instruction, token: Option<Rc<Token<'a>>>) -> usize {
         let index = self.bytes.len();
-        self.append_instr(op_code, token);
-        self.append_u16_oper(0);
+        self.emit_instr(instr, token);
+        self.emit_bytes(0);
         index
     }
 
-    pub fn append_loop(&mut self, loop_start: usize, token: Option<Rc<Token<'a>>>) {
-        self.append_instr(OpCode::Loop, token);
-        self.append_u16_oper((self.len() - 1 - loop_start) as u16); //TODO make sure that it's convertable
+    pub fn emit_loop(&mut self, loop_start: usize, token: Option<Rc<Token<'a>>>) {
+        self.emit_instr(Instruction::Loop, token);
+        self.emit_bytes((self.len() - 1 - loop_start) as u16); //TODO make sure that it's convertable
     }
 
-    pub fn set_relative_jump(&mut self, index: usize) {
-        self.set_u16(index + 1, (self.len() - index) as u16);
+    pub fn patch_jump(&mut self, index: usize) {
+        self.patch_bytes(index + 1, (self.len() - index) as u16);
     }
 
     pub fn len(&self) -> usize {
