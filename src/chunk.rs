@@ -185,6 +185,10 @@ impl fmt::Debug for Instruction {
     }
 }
 
+const NIL_CONST: usize = 0;
+const TRUE_CONST: usize = 1;
+const FALSE_CONST: usize = 2;
+
 #[derive(Clone)]
 pub struct Chunk<'a> {
     bytes: Vec<u8>,
@@ -194,11 +198,18 @@ pub struct Chunk<'a> {
 
 impl<'a> Chunk<'a> {
     pub fn new() -> Self {
-        Self {
+        let mut chunk = Self {
             bytes: Vec::new(),
             constants: Vec::new(),
             tokens: Vec::new(),
-        }
+        };
+
+        //? the order here is important
+        chunk.constants.push(Value::Nil);
+        chunk.constants.push(Value::Bool(true));
+        chunk.constants.push(Value::Bool(false));
+
+        chunk
     }
 
     #[cfg(feature = "debug-bytecode")]
@@ -323,13 +334,34 @@ impl<'a> Chunk<'a> {
         self.bytes[index + 1] = (value >> 8) as u8;
     }
 
+    fn add_constant(&mut self, value: Value<'a>) -> Result<usize, ()> {
+        match &value {
+            Value::Nil => return Ok(NIL_CONST),
+            Value::Bool(val) => return Ok(if *val { TRUE_CONST } else { FALSE_CONST }),
+            Value::String(string) => {
+                for (index, const_) in self.constants.iter().enumerate() {
+                    if let Value::String(string_2) = const_ {
+                        if string_2 == string {
+                            return Ok(index);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        let index = self.constants.len();
+        self.constants.push(value);
+
+        Ok(index)
+    }
+
     pub fn emit_const(
         &mut self,
         value: Value<'a>,
         token: Option<Rc<Token<'a>>>,
     ) -> Result<usize, ()> {
-        let index = self.constants.len();
-        self.constants.push(value);
+        let index = self.add_constant(value)?;
 
         if index <= 0xff {
             self.emit_instr(Instruction::Constant8, token);
