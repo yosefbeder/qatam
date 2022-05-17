@@ -311,8 +311,37 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
                 )?;
             }
             Literal::String(token) => {
-                self.chunk
-                    .emit_const(Value::String(token.lexeme.clone()), Some(Rc::clone(token)))?;
+                let mut content = String::new();
+                let mut iter = token.lexeme.chars().skip(1);
+
+                while let Some(c) = iter.next() {
+                    if c == '\\' {
+                        if let Some(c) = iter.next() {
+                            match c {
+                                'n' => content.push('\n'),
+                                'r' => content.push('\r'),
+                                't' => content.push('\t'),
+                                '\\' => content.push('\\'),
+                                '"' => content.push('"'),
+                                '\'' => content.push('\''),
+                                '0' => content.push('\0'),
+                                _ => {
+                                    //TODO add a hint here
+                                    self.error_at(Rc::clone(&token), "رمز غير متوقع بعد '\\'");
+                                    return Err(());
+                                }
+                            }
+                        }
+                    } else if c == '"' {
+                        break;
+                    } else {
+                        content.push(c);
+                    }
+                }
+
+                let value = Value::String(content);
+
+                self.chunk.emit_const(value, Some(Rc::clone(token)))?;
             }
             Literal::Nil(token) => {
                 self.chunk.emit_const(Value::Nil, Some(Rc::clone(token)))?;
