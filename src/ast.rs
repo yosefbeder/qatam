@@ -31,18 +31,18 @@ impl fmt::Debug for Expr<'_> {
             f,
             "{}",
             match self {
-                Self::Variable(token) => token.get_lexeme(),
+                Self::Variable(token) => token.lexeme.clone(),
                 Self::Literal(literal) => match literal {
                     Literal::Number(token)
                     | Literal::String(token)
                     | Literal::Bool(token)
-                    | Literal::Nil(token) => token.get_lexeme(),
+                    | Literal::Nil(token) => token.lexeme.clone(),
                     Literal::List(_) => "<قائمة>".to_string(),
                     Literal::Object(_) => "<كائن>".to_string(),
                 },
-                Self::Unary(token, expr) => format!("({} {:?})", token.get_lexeme(), expr),
+                Self::Unary(token, expr) => format!("({} {:?})", token.lexeme.clone(), expr),
                 Self::Binary(token, left, right) =>
-                    format!("({} {:?} {:?})", token.get_lexeme(), left, right),
+                    format!("({} {:?} {:?})", token.lexeme.clone(), left, right),
                 Self::Call(_, callee, args) => {
                     format!(
                         "(استدعي {:?} [{}])",
@@ -100,10 +100,10 @@ impl fmt::Debug for Stml<'_> {
 
                     buffer += &format!(
                         "<دالة {} ({})>\n",
-                        name.get_lexeme(),
+                        name.lexeme.clone(),
                         params
                             .iter()
-                            .map(|p| p.get_lexeme())
+                            .map(|p| p.lexeme.clone())
                             .collect::<Vec<_>>()
                             .join("، "),
                     );
@@ -120,7 +120,7 @@ impl fmt::Debug for Stml<'_> {
                 }
                 Stml::VarDecl(name, initializer) => format!(
                     "<تعريف {} {}>\n",
-                    name.get_lexeme(),
+                    name.lexeme.clone(),
                     match initializer {
                         Some(expr) => format!("{:?}", expr),
                         None => "عدم".to_string(),

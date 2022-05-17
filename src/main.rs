@@ -33,7 +33,7 @@ fn main() {
                 process::exit(exitcode::IOERR);
             });
             let mut cli_reporter = CliReporter::new();
-            run(&source, &mut cli_reporter);
+            run_file(&source, &path, &mut cli_reporter);
         }
         "ساعد" => {
             println!("{}", fs::read_to_string("help.txt").unwrap());
@@ -45,13 +45,13 @@ fn main() {
     }
 }
 
-pub fn run<'a>(source: &'a str, reporter: &mut dyn reporter::Reporter<'a>) {
+pub fn run_file<'a>(source: &'a str, file: &str, reporter: &mut dyn reporter::Reporter<'a>) {
     use compiler::Compiler;
     use debug::{debug_ast, debug_bytecode};
     use parser::Parser;
     use tokenizer::Tokenizer;
 
-    let mut tokenizer = Tokenizer::new(source);
+    let mut tokenizer = Tokenizer::new(source, file);
     let mut parser = Parser::new(&mut tokenizer, reporter);
     match parser.parse() {
         Ok(ast) => {
@@ -106,7 +106,7 @@ mod tests {
     fn parsing_exprs() {
         fn test_valid_expr(input: &'static str, expected: &'static str) {
             let mut errors_tracker = ErrorsTracker::new();
-            let mut tokenizer = Tokenizer::new(input);
+            let mut tokenizer = Tokenizer::new(input, "إختبار");
             let mut parser = Parser::new(&mut tokenizer, &mut errors_tracker);
             let expr = match parser.parse_expr() {
                 Ok(expr) => expr,
@@ -114,7 +114,7 @@ mod tests {
                     for report in errors_tracker.errors {
                         println!("{:?}", report);
                     }
-                    panic!("Parsing {} failed", input);
+                    panic!("حدث خطأ أثناء تحليل {}", input);
                 }
             };
             assert_eq!(format!("{:?}", expr), expected);
@@ -122,10 +122,10 @@ mod tests {
 
         fn test_invalid_expr(input: &'static str, expected_error: &'static str) {
             let mut errors_tracker = ErrorsTracker::new();
-            let mut tokenizer = Tokenizer::new(input);
+            let mut tokenizer = Tokenizer::new(input, "إختبار");
             let mut parser = Parser::new(&mut tokenizer, &mut errors_tracker);
             match parser.parse_expr() {
-                Ok(_) => panic!("Parsing {} succeeded, but it should have failed", input),
+                Ok(_) => panic!("كان يجب أن ثحدث خطأ أثناء تحليل {}", input),
                 Err(_) => {
                     assert_eq!(errors_tracker.errors[0].msg, expected_error);
                 }

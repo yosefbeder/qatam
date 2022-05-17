@@ -1,30 +1,20 @@
-use super::reporter::{Phase, Report, Reporter};
 use super::token::{Token, TokenType};
-use std::rc::Rc;
 
 pub struct Tokenizer<'a> {
     source: &'a str,
+    file: String,
     start: usize,
     current: usize,
 }
 
 impl<'a> Tokenizer<'a> {
-    pub fn new(source: &'a str) -> Self {
+    pub fn new(source: &'a str, file: &str) -> Self {
         Self {
             source,
+            file: file.to_string(),
             start: 0,
             current: 0,
         }
-    }
-
-    fn error_at(token: &Token<'a>, msg: &str, reporter: &mut dyn Reporter<'a>) {
-        let report = Report::new(Phase::Tokenizing, msg.to_string(), Rc::new(token.clone()));
-        reporter.error(report);
-    }
-
-    fn warning_at(token: &Token<'a>, msg: &str, reporter: &mut dyn Reporter<'a>) {
-        let report = Report::new(Phase::Tokenizing, msg.to_string(), Rc::new(token.clone()));
-        reporter.warning(report);
     }
 
     //TODO improve the performance of these helper functions
@@ -48,11 +38,45 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
+    fn pop_identifier(&mut self) -> Token<'a> {
+        let start = self.start;
+        let length = self.current - self.start;
+        let lexeme = self.slice(start, length);
+        self.start = self.current;
+        Token::new(
+            match lexeme.as_str() {
+                "عدم" => TokenType::Nil,
+                "صحيح" => TokenType::True,
+                "خطأ" => TokenType::False,
+                "إن" => TokenType::If,
+                "إلا" => TokenType::Else,
+                "دالة" => TokenType::Function,
+                "متغير" => TokenType::Var,
+                "كرر" => TokenType::Loop,
+                "بينما" => TokenType::While,
+                "إفعل" => TokenType::Do,
+                "قف" => TokenType::Break,
+                "أكمل" => TokenType::Continue,
+                "أرجع" => TokenType::Return,
+                "ألقي" => TokenType::Throw,
+                "حاول" => TokenType::Try,
+                "أمسك" => TokenType::Catch,
+                _ => TokenType::Identifier,
+            },
+            self.source,
+            &self.file,
+            lexeme,
+            start,
+            length,
+        )
+    }
+
     fn pop_token(&mut self, typ: TokenType) -> Token<'a> {
         let start = self.start;
         let length = self.current - self.start;
+        let lexeme = self.slice(start, length);
         self.start = self.current;
-        Token::new(typ, self.source, start, length)
+        Token::new(typ, self.source, &self.file, lexeme, start, length)
     }
 
     fn slice(&self, start: usize, length: usize) -> String {
@@ -63,10 +87,8 @@ impl<'a> Tokenizer<'a> {
             .collect::<String>()
     }
 
-    fn pop_unknown_token(&mut self, reporter: &mut dyn Reporter<'a>) -> Token<'a> {
-        let token = self.pop_token(TokenType::Unknown);
-        Self::error_at(&token, "رمز غير متوقع", reporter);
-        return token;
+    fn pop_unknown_token(&mut self) -> Token<'a> {
+        return self.pop_token(TokenType::Unknown);
     }
 
     fn skip_whitespace(&mut self) {
@@ -81,7 +103,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    pub fn next_token(&mut self, reporter: &mut dyn Reporter<'a>) -> Token<'a> {
+    pub fn next_token(&mut self) -> Token<'a> {
         self.skip_whitespace();
 
         if let Some(c) = self.next() {
@@ -139,7 +161,7 @@ impl<'a> Tokenizer<'a> {
                         self.next();
                         self.pop_token(TokenType::And)
                     } else {
-                        self.pop_unknown_token(reporter)
+                        self.pop_unknown_token()
                     }
                 }
                 '|' => {
@@ -147,44 +169,30 @@ impl<'a> Tokenizer<'a> {
                         self.next();
                         self.pop_token(TokenType::Or)
                     } else {
-                        self.pop_unknown_token(reporter)
+                        self.pop_unknown_token()
                     }
                 }
                 '"' => {
-                    let mut slash_misused = false;
-
                     while let Some(c) = self.next() {
                         match c {
                             '"' => {
-                                if slash_misused {
-                                    let token = self.pop_token(TokenType::String);
-                                    Self::warning_at(&token, "خطأ في إستخدام '\\'", reporter);
-                                    return token;
-                                } else {
-                                    return self.pop_token(TokenType::String);
-                                }
+                                return self.pop_token(TokenType::String);
                             }
                             '\n' => {
                                 let token = self.pop_token(TokenType::UnTermedString);
-                                Self::error_at(&token, "نص غير مغلق", reporter);
                                 return token;
                             }
                             '\\' => match self.peek(0) {
                                 Some('"') => {
                                     self.next();
                                 }
-                                Some('n') | Some('t') | Some('b') | Some('r') | Some('f')
-                                | Some('\\') => {}
-                                _ => {
-                                    slash_misused = true;
-                                }
+                                _ => {}
                             },
                             _ => {}
                         }
                     }
 
                     let token = self.pop_token(TokenType::UnTermedString);
-                    Self::error_at(&token, "نص غير مغلق", reporter);
                     return token;
                 }
                 '#' => {
@@ -203,27 +211,7 @@ impl<'a> Tokenizer<'a> {
                             }
                         }
 
-                        return self.pop_token(
-                            match &self.slice(self.start, self.current - self.start) as &str {
-                                "عدم" => TokenType::Nil,
-                                "صحيح" => TokenType::True,
-                                "خطأ" => TokenType::False,
-                                "إن" => TokenType::If,
-                                "إلا" => TokenType::Else,
-                                "دالة" => TokenType::Function,
-                                "متغير" => TokenType::Var,
-                                "كرر" => TokenType::Loop,
-                                "بينما" => TokenType::While,
-                                "إفعل" => TokenType::Do,
-                                "قف" => TokenType::Break,
-                                "أكمل" => TokenType::Continue,
-                                "أرجع" => TokenType::Return,
-                                "ألقي" => TokenType::Throw,
-                                "حاول" => TokenType::Try,
-                                "أمسك" => TokenType::Catch,
-                                _ => TokenType::Identifier,
-                            },
-                        );
+                        return self.pop_identifier();
                     }
 
                     if c.is_ascii_digit() {
@@ -263,7 +251,6 @@ impl<'a> Tokenizer<'a> {
                                 }
 
                                 let token = self.pop_token(TokenType::InvalidNumber);
-                                Self::error_at(&token, "رقم خاطئ", reporter);
                                 return token;
                             }
                         }
@@ -271,7 +258,7 @@ impl<'a> Tokenizer<'a> {
                         return self.pop_token(TokenType::Number);
                     }
 
-                    self.pop_unknown_token(reporter)
+                    self.pop_unknown_token()
                 }
             }
         } else {

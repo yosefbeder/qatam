@@ -62,12 +62,6 @@ pub enum TokenType {
     EOF,
 }
 
-pub const INVALID_TYPES: [TokenType; 3] = [
-    TokenType::UnTermedString,
-    TokenType::InvalidNumber,
-    TokenType::Unknown,
-];
-
 pub const BOUNDARIES: [TokenType; 11] = [
     TokenType::Function,
     TokenType::Var,
@@ -147,6 +141,8 @@ impl From<TokenType> for usize {
 pub struct Token<'a> {
     pub typ: TokenType,
     source: &'a str,
+    file: String,
+    pub lexeme: String,
     start: usize,
     length: usize,
 }
@@ -156,25 +152,35 @@ impl<'a> fmt::Debug for Token<'a> {
         let (line, col) = self.get_pos();
         write!(
             f,
-            "{{\n{2}type: {0:?},\n{2}lexeme: {1},\n{2}line: {line},\n{2}column: {col},\n}}",
+            "{{\n{3}type: {0:?},\n{3}lexeme: {1},\n{3}file:{2},\n{3}line: {line},\n{3}column: {col},\n}}",
             self.typ,
-            self.get_lexeme(),
+            self.lexeme,
+            self.file,
             " ".repeat(4),
         )
     }
 }
 
 impl<'a> Token<'a> {
-    pub fn new(typ: TokenType, source: &'a str, start: usize, length: usize) -> Self {
+    pub fn new(
+        typ: TokenType,
+        source: &'a str,
+        file: &str,
+        lexeme: String,
+        start: usize,
+        length: usize,
+    ) -> Self {
         Self {
             typ,
             source,
+            file: file.to_string(),
+            lexeme,
             start,
             length,
         }
     }
 
-    pub fn get_pos(&self) -> (usize, usize) {
+    fn get_pos(&self) -> (usize, usize) {
         let mut offset = 0;
         let mut line = 1;
         let mut col = 1;
@@ -192,14 +198,6 @@ impl<'a> Token<'a> {
         }
         (line, col)
     }
-
-    pub fn get_lexeme(&self) -> String {
-        self.source
-            .chars()
-            .skip(self.start)
-            .take(self.length)
-            .collect::<String>()
-    }
 }
 
 impl<'a> PartialEq for Token<'a> {
@@ -210,9 +208,7 @@ impl<'a> PartialEq for Token<'a> {
             | TokenType::UnTermedString
             | TokenType::Number
             | TokenType::InvalidNumber
-            | TokenType::Unknown => {
-                self.typ == other.typ && self.get_lexeme() == other.get_lexeme()
-            }
+            | TokenType::Unknown => self.typ == other.typ && self.lexeme == other.lexeme,
             _ => self.typ == other.typ,
         }
     }
@@ -221,15 +217,21 @@ impl<'a> PartialEq for Token<'a> {
 impl<'a> fmt::Display for Token<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let (line, col) = self.get_pos();
+        let padding = " ".repeat(format!("{line}").len() + 1);
 
-        write!(
-            f,
-            "{}\n{}^-هنا",
-            match self.source.lines().nth(line - 1) {
-                Some(line) => line.to_string(),
-                None => "".to_string(),
-            },
-            " ".repeat(col - 1)
-        )
+        let mut buffer = String::new();
+        buffer += format!("{}:{}:{}\n", self.file, line, col).as_str();
+        buffer += padding.as_str();
+        buffer += "|\n";
+        buffer += format!("{line} | {}\n", self.source.lines().nth(line - 1).unwrap()).as_str();
+        buffer += padding.as_str();
+        buffer += "| ";
+        for _ in 0..col - 1 {
+            buffer += " ";
+        }
+        for _ in 0..self.length {
+            buffer += "~";
+        }
+        write!(f, "{}", buffer,)
     }
 }

@@ -194,7 +194,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
         if self.in_global_scope() {
             self.chunk
-                .emit_const(Value::String(token.get_lexeme()), Some(Rc::clone(&token)))?;
+                .emit_const(Value::String(token.lexeme.clone()), Some(Rc::clone(&token)))?;
             self.chunk
                 .emit_instr(Instruction::DefineGlobal, Some(Rc::clone(&token)));
             return Ok(());
@@ -222,7 +222,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
     fn set_global(&mut self, token: Rc<Token<'a>>) -> Result<(), ()> {
         self.chunk
-            .emit_const(Value::String(token.get_lexeme()), Some(Rc::clone(&token)))?;
+            .emit_const(Value::String(token.lexeme.clone()), Some(Rc::clone(&token)))?;
         self.chunk
             .emit_instr(Instruction::SetGlobal, Some(Rc::clone(&token)));
         return Ok(());
@@ -286,7 +286,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         drop(state);
 
         self.chunk
-            .emit_const(Value::String(token.get_lexeme()), Some(Rc::clone(&token)))?;
+            .emit_const(Value::String(token.lexeme.clone()), Some(Rc::clone(&token)))?;
         self.chunk
             .emit_instr(Instruction::GetGlobal, Some(Rc::clone(&token)));
         Ok(())
@@ -296,7 +296,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         match literal {
             Literal::Number(token) => {
                 self.chunk.emit_const(
-                    Value::Number(token.get_lexeme().parse().unwrap()),
+                    Value::Number(token.lexeme.clone().parse().unwrap()),
                     Some(Rc::clone(token)),
                 )?;
             }
@@ -312,7 +312,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             }
             Literal::String(token) => {
                 self.chunk
-                    .emit_const(Value::String(token.get_lexeme()), Some(Rc::clone(token)))?;
+                    .emit_const(Value::String(token.lexeme.clone()), Some(Rc::clone(token)))?;
             }
             Literal::Nil(token) => {
                 self.chunk.emit_const(Value::Nil, Some(Rc::clone(token)))?;
@@ -329,8 +329,10 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             Literal::Object(items) => {
                 let mut size = 0;
                 for item in items {
-                    self.chunk
-                        .emit_const(Value::String(item.0.get_lexeme()), Some(Rc::clone(&item.0)))?;
+                    self.chunk.emit_const(
+                        Value::String(item.0.lexeme.clone()),
+                        Some(Rc::clone(&item.0)),
+                    )?;
                     self.expr(&item.1)?;
                     size += 1;
                 }
@@ -534,7 +536,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         body: &Stml<'a>,
     ) -> Result<(), ()> {
         let mut function_compiler = Compiler::new_function(
-            Some(name.get_lexeme()),
+            Some(name.lexeme.clone()),
             body,
             Rc::clone(&self.state),
             self.reporter,

@@ -36,8 +36,7 @@ impl<'a> Report<'a> {
 
 impl<'a> fmt::Display for Report<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (line, col) = self.token.get_pos();
-        write!(f, "{} [{}:{}]\n{}", self.msg, line, col, self.token)
+        write!(f, "{}\n{}", self.msg, self.token)
     }
 }
 
@@ -63,16 +62,11 @@ impl CliReporter {
 impl<'a> Reporter<'a> for CliReporter {
     fn warning(&mut self, report: Report) {
         self.warnings_count += 1;
-        let (line, col) = report.token.get_pos();
-        println!("تحذير: {} [{}:{}]\n{}", report.msg, line, col, report.token);
+        println!("تحذير: {}", report);
     }
 
     fn error(&mut self, report: Report) {
         self.errors_count += 1;
-        let (line, col) = report.token.get_pos();
-        eprintln!(
-            "خطأ {}: {} [{}:{}]\n{}",
-            report.phase, report.msg, line, col, report.token
-        );
+        eprintln!("خطأ {}: {}", report.phase, report);
     }
 }

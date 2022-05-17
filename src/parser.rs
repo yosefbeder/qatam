@@ -1,7 +1,7 @@
 use super::ast::{Expr, Literal, Stml};
 use super::operators::{Associativity, OPERATORS};
 use super::reporter::{Phase, Report, Reporter};
-use super::token::{Token, TokenType, BOUNDARIES, INVALID_TYPES};
+use super::token::{Token, TokenType, BOUNDARIES};
 use super::tokenizer::Tokenizer;
 use std::rc::Rc;
 
@@ -16,7 +16,7 @@ pub struct Parser<'a, 'b, 'c> {
 impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     pub fn new(tokenizer: &'a mut Tokenizer<'b>, reporter: &'c mut dyn Reporter<'b>) -> Self {
         Self {
-            current: tokenizer.next_token(reporter),
+            current: tokenizer.next_token(),
             previous: None,
             tokenizer,
             reporter,
@@ -24,8 +24,8 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         }
     }
 
-    fn error_at(&mut self, token: &Token<'b>, msg: &str) {
-        let report = Report::new(Phase::Parsing, msg.to_string(), Rc::new(token.clone()));
+    fn error_at(&mut self, phase: Phase, token: &Token<'b>, msg: &str) {
+        let report = Report::new(phase, msg.to_string(), Rc::new(token.clone()));
         self.reporter.error(report);
         self.had_error = true;
     }
@@ -35,22 +35,10 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     //     self.reporter.warning(report);
     // }
 
-    fn check_previous(&self) -> Result<(), ()> {
-        match &self.previous {
-            Some(token) => {
-                if INVALID_TYPES.contains(&token.typ) {
-                    return Err(());
-                }
-                return Ok(());
-            }
-            None => unreachable!(),
-        }
-    }
-
     fn advance(&mut self) -> Result<(), ()> {
         loop {
             if self.current.typ == TokenType::NewLine || self.current.typ == TokenType::Comment {
-                self.current = self.tokenizer.next_token(self.reporter);
+                self.current = self.tokenizer.next_token();
                 continue;
             }
             if self.current.typ == TokenType::EOF {
@@ -58,9 +46,27 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
             }
 
             self.previous = Some(self.current.clone());
-            self.check_previous()?;
-            self.current = self.tokenizer.next_token(self.reporter);
-            break;
+            self.current = self.tokenizer.next_token();
+
+            if let Some(token) = self.previous.clone() {
+                match token.typ {
+                    TokenType::Unknown => {
+                        self.error_at(Phase::Tokenizing, &token, "رمز غير متوقع");
+                        return Err(());
+                    }
+                    TokenType::UnTermedString => {
+                        self.error_at(Phase::Tokenizing, &token, "نص غير مغلق");
+                        return Err(());
+                    }
+                    TokenType::InvalidNumber => {
+                        self.error_at(Phase::Tokenizing, &token, "رقم خاطئ");
+                        return Err(());
+                    }
+                    _ => {
+                        break;
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -77,7 +83,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
             Ok(())
         } else {
             let token = self.current.clone();
-            self.error_at(&token, msg);
+            self.error_at(Phase::Parsing, &token, msg);
             Err(())
         }
     }
@@ -87,7 +93,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
             if self.current.typ == TokenType::Comment
                 || ignore_newlines && self.current.typ == TokenType::NewLine
             {
-                self.current = self.tokenizer.next_token(self.reporter);
+                self.current = self.tokenizer.next_token();
                 continue;
             }
             break;
@@ -212,7 +218,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                 self.group()?
             }
             _ => {
-                self.error_at(&token, "توقعت عبارة");
+                self.error_at(Phase::Parsing, &token, "توقعت عبارة");
                 return Err(());
             }
         };
@@ -236,7 +242,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                 self.advance()?;
 
                 if token.typ == TokenType::Equal && !can_assign {
-                    self.error_at(&token, "الجانب الأيمن غير صحيح");
+                    self.error_at(Phase::Parsing, &token, "الجانب الأيمن غير صحيح");
                 }
 
                 expr = Expr::Binary(
@@ -275,7 +281,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                         if self.check(TokenType::Equal) {
                             token = self.next()?;
                             if !can_assign {
-                                self.error_at(&token, "الجانب الأيمن غير صحيح");
+                                self.error_at(Phase::Parsing, &token, "الجانب الأيمن غير صحيح");
                             }
 
                             expr = Expr::Set(
@@ -296,7 +302,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                             let infix_precedence = OPERATORS[row].1.unwrap();
                             token = self.next()?;
                             if !can_assign {
-                                self.error_at(&token, "الجانب الأيمن غير صحيح");
+                                self.error_at(Phase::Parsing, &token, "الجانب الأيمن غير صحيح");
                             }
 
                             expr = Expr::Set(
