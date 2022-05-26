@@ -2,8 +2,6 @@ use std::cmp::PartialEq;
 use std::convert::From;
 use std::fmt;
 
-pub const NUMBER: usize = 50;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenType {
     OParen,
@@ -38,22 +36,24 @@ pub enum TokenType {
     Comment,
 
     Identifier,
-    If,       // إن
-    Else,     // إلا
-    Function, // دالة
-    Var,      // متغير
-    Loop,     // كرر
-    While,    // بينما
-    Do,       // إفعل
-    Break,    // قف
-    Continue, // أكمل
-    Return,   // أرجع
-    Throw,    // ألقي
-    Try,      // حاول
-    Catch,    // أمسك
-    Nil,      // عدم
-    True,     // صحيح
-    False,    // خطأ
+    If,
+    ElseIf,
+    Else,
+    Function,
+    Var,
+    Const,
+    Loop,
+    While,
+    Do,
+    Break,
+    Continue,
+    Return,
+    Throw,
+    Try,
+    Catch,
+    Nil,
+    True,
+    False,
     Number,
     InvalidNumber,
 
@@ -113,29 +113,33 @@ impl From<TokenType> for usize {
 
             TokenType::Identifier => 29,
             TokenType::If => 30,
-            TokenType::Else => 31,
-            TokenType::Function => 32,
-            TokenType::Var => 33,
-            TokenType::Loop => 34,
-            TokenType::While => 35,
-            TokenType::Do => 36,
-            TokenType::Break => 37,
-            TokenType::Continue => 38,
-            TokenType::Return => 39,
-            TokenType::Throw => 40,
-            TokenType::Try => 41,
-            TokenType::Catch => 42,
-            TokenType::Nil => 43,
-            TokenType::True => 44,
-            TokenType::False => 45,
-            TokenType::Number => 46,
-            TokenType::InvalidNumber => 47,
+            TokenType::ElseIf => 31,
+            TokenType::Else => 32,
+            TokenType::Function => 33,
+            TokenType::Var => 34,
+            TokenType::Const => 35,
+            TokenType::Loop => 36,
+            TokenType::While => 37,
+            TokenType::Do => 38,
+            TokenType::Break => 39,
+            TokenType::Continue => 40,
+            TokenType::Return => 41,
+            TokenType::Throw => 42,
+            TokenType::Try => 43,
+            TokenType::Catch => 44,
+            TokenType::Nil => 45,
+            TokenType::True => 46,
+            TokenType::False => 47,
+            TokenType::Number => 48,
+            TokenType::InvalidNumber => 49,
 
-            TokenType::Unknown => 48,
-            TokenType::EOF => 49,
+            TokenType::Unknown => 50,
+            TokenType::EOF => 51,
         }
     }
 }
+
+pub const NUMBER: usize = 52;
 
 #[derive(Clone)]
 pub struct Token<'a> {
