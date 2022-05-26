@@ -4,9 +4,9 @@ use std::{
     rc::Rc,
 };
 
-#[cfg(feature = "debug-bytecode")]
+#[cfg(feature = "debug-execution")]
 use super::utils::combine;
-#[cfg(feature = "debug-bytecode")]
+#[cfg(feature = "debug-execution")]
 use std::fmt;
 
 #[derive(Clone, Copy)]
@@ -132,7 +132,7 @@ impl TryFrom<u8> for Instruction {
     }
 }
 
-#[cfg(feature = "debug-bytecode")]
+#[cfg(feature = "debug-execution")]
 impl fmt::Debug for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let content = match self {
@@ -207,7 +207,7 @@ impl<'a> Chunk<'a> {
         chunk
     }
 
-    #[cfg(feature = "debug-bytecode")]
+    #[cfg(feature = "debug-execution")]
     pub fn disassemble_instr_at(
         &self,
         offset: usize,
@@ -302,7 +302,7 @@ impl<'a> Chunk<'a> {
         }
     }
 
-    #[cfg(feature = "debug-bytecode")]
+    #[cfg(feature = "debug-execution")]
     fn disassemble(&self) -> String {
         let mut buffer = String::new();
         let mut offset = 0;
@@ -415,7 +415,7 @@ impl<'a> Chunk<'a> {
     }
 }
 
-#[cfg(feature = "debug-bytecode")]
+#[cfg(feature = "debug-execution")]
 impl<'a> fmt::Debug for Chunk<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.disassemble())

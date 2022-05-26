@@ -9,10 +9,14 @@ mod token;
 mod tokenizer;
 mod utils;
 mod value;
+mod vm;
+
+use std::{env, fs, process};
+
+const TAB_SIZE: usize = 4;
 
 fn main() {
     use reporter::CliReporter;
-    use std::{env, fs, process};
 
     let mut args = env::args().skip(1);
     let subcommand = args.next().unwrap_or_else(|| {
@@ -51,22 +55,31 @@ pub fn run_file<'a>(source: &'a str, file: &str, reporter: &mut dyn reporter::Re
     use debug::{debug_ast, debug_bytecode};
     use parser::Parser;
     use tokenizer::Tokenizer;
+    use vm::Vm;
 
     let mut tokenizer = Tokenizer::new(source, file);
-    let mut parser = Parser::new(&mut tokenizer, reporter);
-    match parser.parse() {
-        Ok(ast) => {
-            debug_ast(&ast);
-            let mut compiler = Compiler::new(&ast, reporter);
-            match compiler.compile() {
-                Ok(function) => {
-                    debug_bytecode(&function);
-                }
-                Err(_) => {}
-            }
-        }
-        Err(_) => {}
-    };
+
+    let ast = Parser::new(&mut tokenizer, reporter)
+        .parse()
+        .unwrap_or_else(|_| {
+            eprintln!("توقفت جراء خطأ تحليلي");
+            process::exit(exitcode::DATAERR);
+        });
+    debug_ast(&ast);
+
+    let script = Compiler::new(&ast, reporter).compile().unwrap_or_else(|_| {
+        eprintln!("توقفت جراء خطأ ترجمي");
+        process::exit(exitcode::DATAERR);
+    });
+    debug_bytecode(&script);
+
+    Vm::new(script, reporter).run().unwrap_or_else(|_| {
+        eprintln!("توقفت جراء خطأ تشغيلي");
+        process::exit(exitcode::DATAERR);
+    });
+
+    println!("تمت العملية بنجاح 👍");
+    process::exit(exitcode::OK);
 }
 
 #[cfg(test)]
@@ -107,7 +120,7 @@ mod tests {
     fn parsing_exprs() {
         fn test_valid_expr(input: &'static str, expected: &'static str) {
             let mut errors_tracker = ErrorsTracker::new();
-            let mut tokenizer = Tokenizer::new(input, "إختبار");
+            let mut tokenizer = Tokenizer::new(input, "test");
             let mut parser = Parser::new(&mut tokenizer, &mut errors_tracker);
             let expr = match parser.parse_expr() {
                 Ok(expr) => expr,
@@ -115,7 +128,7 @@ mod tests {
                     for report in errors_tracker.errors {
                         println!("{:?}", report);
                     }
-                    panic!("حدث خطأ أثناء تحليل {}", input);
+                    panic!("Parsing {} failed", input);
                 }
             };
             assert_eq!(format!("{:?}", expr), expected);
@@ -123,10 +136,10 @@ mod tests {
 
         fn test_invalid_expr(input: &'static str, expected_error: &'static str) {
             let mut errors_tracker = ErrorsTracker::new();
-            let mut tokenizer = Tokenizer::new(input, "إختبار");
+            let mut tokenizer = Tokenizer::new(input, "test");
             let mut parser = Parser::new(&mut tokenizer, &mut errors_tracker);
             match parser.parse_expr() {
-                Ok(_) => panic!("كان يجب أن ثحدث خطأ أثناء تحليل {}", input),
+                Ok(_) => panic!("Parsing {} succeeded, but it should have failed", input),
                 Err(_) => {
                     assert_eq!(errors_tracker.errors[0].msg, expected_error);
                 }
