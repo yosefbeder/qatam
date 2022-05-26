@@ -7,6 +7,7 @@ mod parser;
 mod reporter;
 mod token;
 mod tokenizer;
+mod utils;
 mod value;
 
 fn main() {

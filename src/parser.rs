@@ -276,7 +276,9 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
                     //TODO>> abstract
                     TokenType::Period => {
                         self.consume(TokenType::Identifier, "توقعت اسم الخاصية")?;
-                        let key = Expr::Variable(Rc::new(self.previous.as_ref().unwrap().clone()));
+                        let key = Expr::Literal(Literal::String(Rc::new(
+                            self.previous.as_ref().unwrap().clone(),
+                        )));
 
                         if self.check(TokenType::Equal) {
                             token = self.next()?;
@@ -525,6 +527,12 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     pub fn parse(&mut self) -> Result<Vec<Stml<'b>>, ()> {
+        if cfg!(feature = "debug-ast") {
+            println!("---");
+            println!("[DEBUG] started parsing");
+            println!("---");
+        }
+
         let mut decls = vec![];
         while !self.at_end() {
             match self.decl() {

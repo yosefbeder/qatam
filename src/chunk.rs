@@ -1,16 +1,16 @@
-use super::token::Token;
-use super::value::Value;
+use super::{token::Token, utils::split, value::Value};
 use std::{
     convert::{Into, TryFrom},
     rc::Rc,
 };
 
 #[cfg(feature = "debug-bytecode")]
+use super::utils::combine;
+#[cfg(feature = "debug-bytecode")]
 use std::fmt;
 
 #[derive(Clone, Copy)]
 pub enum Instruction {
-    Push,
     Pop,
     Negate,
     Add,
@@ -31,7 +31,6 @@ pub enum Instruction {
     JumpIfTrue,
     Loop,
     Return,
-    Nil,
     Call,
     Closure,
     GetLocal,
@@ -51,42 +50,40 @@ pub enum Instruction {
 impl Into<u8> for Instruction {
     fn into(self) -> u8 {
         match self {
-            Self::Push => 0,
-            Self::Pop => 1,
-            Self::Negate => 2,
-            Self::Add => 3,
-            Self::Subtract => 4,
-            Self::Multiply => 5,
-            Self::Divide => 6,
-            Self::Remainder => 7,
-            Self::Not => 8,
-            Self::Equal => 9,
-            Self::Greater => 10,
-            Self::GreaterEqual => 11,
-            Self::Less => 12,
-            Self::LessEqual => 13,
-            Self::Constant8 => 14,
-            Self::Constant16 => 15,
-            Self::Jump => 16,
-            Self::JumpIfFalse => 17,
-            Self::JumpIfTrue => 18,
-            Self::Loop => 19,
-            Self::Return => 20,
-            Self::Nil => 21,
-            Self::Call => 22,
-            Self::Closure => 23,
-            Self::GetLocal => 24,
-            Self::SetLocal => 25,
-            Self::GetUpValue => 26,
-            Self::SetUpValue => 27,
-            Self::CloseUpValue => 28,
-            Self::GetGlobal => 29,
-            Self::SetGlobal => 30,
-            Self::DefineGlobal => 31,
-            Self::Get => 32,
-            Self::Set => 33,
-            Self::BuildList => 34,
-            Self::BuildObject => 35,
+            Instruction::Pop => 0,
+            Instruction::Negate => 1,
+            Instruction::Add => 2,
+            Instruction::Subtract => 3,
+            Instruction::Multiply => 4,
+            Instruction::Divide => 5,
+            Instruction::Remainder => 6,
+            Instruction::Not => 7,
+            Instruction::Equal => 8,
+            Instruction::Greater => 9,
+            Instruction::GreaterEqual => 10,
+            Instruction::Less => 11,
+            Instruction::LessEqual => 12,
+            Instruction::Constant8 => 13,
+            Instruction::Constant16 => 14,
+            Instruction::Jump => 15,
+            Instruction::JumpIfFalse => 16,
+            Instruction::JumpIfTrue => 17,
+            Instruction::Loop => 18,
+            Instruction::Return => 19,
+            Instruction::Call => 20,
+            Instruction::Closure => 21,
+            Instruction::GetLocal => 22,
+            Instruction::SetLocal => 23,
+            Instruction::GetUpValue => 24,
+            Instruction::SetUpValue => 25,
+            Instruction::CloseUpValue => 26,
+            Instruction::GetGlobal => 27,
+            Instruction::SetGlobal => 28,
+            Instruction::DefineGlobal => 29,
+            Instruction::Get => 30,
+            Instruction::Set => 31,
+            Instruction::BuildList => 32,
+            Instruction::BuildObject => 33,
         }
     }
 }
@@ -96,42 +93,40 @@ impl TryFrom<u8> for Instruction {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(Self::Push),
-            1 => Ok(Self::Pop),
-            2 => Ok(Self::Negate),
-            3 => Ok(Self::Add),
-            4 => Ok(Self::Subtract),
-            5 => Ok(Self::Multiply),
-            6 => Ok(Self::Divide),
-            7 => Ok(Self::Remainder),
-            8 => Ok(Self::Not),
-            9 => Ok(Self::Equal),
-            10 => Ok(Self::Greater),
-            11 => Ok(Self::GreaterEqual),
-            12 => Ok(Self::Less),
-            13 => Ok(Self::LessEqual),
-            14 => Ok(Self::Constant8),
-            15 => Ok(Self::Constant16),
-            16 => Ok(Self::Jump),
-            17 => Ok(Self::JumpIfFalse),
-            18 => Ok(Self::JumpIfTrue),
-            19 => Ok(Self::Loop),
-            20 => Ok(Self::Return),
-            21 => Ok(Self::Nil),
-            22 => Ok(Self::Call),
-            23 => Ok(Self::Closure),
-            24 => Ok(Self::GetLocal),
-            25 => Ok(Self::SetLocal),
-            26 => Ok(Self::GetUpValue),
-            27 => Ok(Self::SetUpValue),
-            28 => Ok(Self::CloseUpValue),
-            29 => Ok(Self::GetGlobal),
-            30 => Ok(Self::SetGlobal),
-            31 => Ok(Self::DefineGlobal),
-            32 => Ok(Self::Get),
-            33 => Ok(Self::Set),
-            34 => Ok(Self::BuildList),
-            35 => Ok(Self::BuildObject),
+            0 => Ok(Instruction::Pop),
+            1 => Ok(Instruction::Negate),
+            2 => Ok(Instruction::Add),
+            3 => Ok(Instruction::Subtract),
+            4 => Ok(Instruction::Multiply),
+            5 => Ok(Instruction::Divide),
+            6 => Ok(Instruction::Remainder),
+            7 => Ok(Instruction::Not),
+            8 => Ok(Instruction::Equal),
+            9 => Ok(Instruction::Greater),
+            10 => Ok(Instruction::GreaterEqual),
+            11 => Ok(Instruction::Less),
+            12 => Ok(Instruction::LessEqual),
+            13 => Ok(Instruction::Constant8),
+            14 => Ok(Instruction::Constant16),
+            15 => Ok(Instruction::Jump),
+            16 => Ok(Instruction::JumpIfFalse),
+            17 => Ok(Instruction::JumpIfTrue),
+            18 => Ok(Instruction::Loop),
+            19 => Ok(Instruction::Return),
+            20 => Ok(Instruction::Call),
+            21 => Ok(Instruction::Closure),
+            22 => Ok(Instruction::GetLocal),
+            23 => Ok(Instruction::SetLocal),
+            24 => Ok(Instruction::GetUpValue),
+            25 => Ok(Instruction::SetUpValue),
+            26 => Ok(Instruction::CloseUpValue),
+            27 => Ok(Instruction::GetGlobal),
+            28 => Ok(Instruction::SetGlobal),
+            29 => Ok(Instruction::DefineGlobal),
+            30 => Ok(Instruction::Get),
+            31 => Ok(Instruction::Set),
+            32 => Ok(Instruction::BuildList),
+            33 => Ok(Instruction::BuildObject),
             _ => Err(()),
         }
     }
@@ -140,48 +135,48 @@ impl TryFrom<u8> for Instruction {
 #[cfg(feature = "debug-bytecode")]
 impl fmt::Debug for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{:20}",
-            match self {
-                Self::Push => "PUSH",
-                Self::Pop => "POP",
-                Self::Negate => "NEGATE",
-                Self::Add => "ADD",
-                Self::Subtract => "SUBTRACT",
-                Self::Multiply => "MULTIPLY",
-                Self::Divide => "DIVIDE",
-                Self::Remainder => "REMAINDER",
-                Self::Not => "NOT",
-                Self::Equal => "EQUAL",
-                Self::Greater => "GREATER",
-                Self::GreaterEqual => "GREATER_EQUAL",
-                Self::Less => "LESS",
-                Self::LessEqual => "LESS_EQUAL",
-                Self::Constant8 => "CONSTANT8",
-                Self::Constant16 => "CONSTANT16",
-                Self::Jump => "JUMP",
-                Self::JumpIfFalse => "JUMP_IF_FALSE",
-                Self::JumpIfTrue => "JUMP_IF_TRUE",
-                Self::Loop => "LOOP",
-                Self::Return => "RETURN",
-                Self::Nil => "NIL",
-                Self::Call => "CALL",
-                Self::Closure => "CLOSURE",
-                Self::GetLocal => "GET_LOCAL",
-                Self::SetLocal => "SET_LOCAL",
-                Self::GetUpValue => "GET_UPVALUE",
-                Self::SetUpValue => "SET_UPVALUE",
-                Self::CloseUpValue => "CLOSE_UPVALUE",
-                Self::GetGlobal => "GET_GLOBAL",
-                Self::SetGlobal => "SET_GLOBAL",
-                Self::DefineGlobal => "DEFINE_GLOBAL",
-                Self::Get => "GET",
-                Self::Set => "SET",
-                Self::BuildList => "BUILD_LIST",
-                Self::BuildObject => "BUILD_OBJECT",
-            },
-        )
+        let content = match self {
+            Self::Pop => "POP",
+            Self::Negate => "NEGATE",
+            Self::Add => "ADD",
+            Self::Subtract => "SUBTRACT",
+            Self::Multiply => "MULTIPLY",
+            Self::Divide => "DIVIDE",
+            Self::Remainder => "REMAINDER",
+            Self::Not => "NOT",
+            Self::Equal => "EQUAL",
+            Self::Greater => "GREATER",
+            Self::GreaterEqual => "GREATER_EQUAL",
+            Self::Less => "LESS",
+            Self::LessEqual => "LESS_EQUAL",
+            Self::Constant8 => "CONSTANT8",
+            Self::Constant16 => "CONSTANT16",
+            Self::Jump => "JUMP",
+            Self::JumpIfFalse => "JUMP_IF_FALSE",
+            Self::JumpIfTrue => "JUMP_IF_TRUE",
+            Self::Loop => "LOOP",
+            Self::Return => "RETURN",
+            Self::Call => "CALL",
+            Self::Closure => "CLOSURE",
+            Self::GetLocal => "GET_LOCAL",
+            Self::SetLocal => "SET_LOCAL",
+            Self::GetUpValue => "GET_UPVALUE",
+            Self::SetUpValue => "SET_UPVALUE",
+            Self::CloseUpValue => "CLOSE_UPVALUE",
+            Self::GetGlobal => "GET_GLOBAL",
+            Self::SetGlobal => "SET_GLOBAL",
+            Self::DefineGlobal => "DEFINE_GLOBAL",
+            Self::Get => "GET",
+            Self::Set => "SET",
+            Self::BuildList => "BUILD_LIST",
+            Self::BuildObject => "BUILD_OBJECT",
+        };
+
+        if let Some(width) = f.width() {
+            write!(f, "{:width$}", content)
+        } else {
+            write!(f, "{}", content)
+        }
     }
 }
 
@@ -213,14 +208,17 @@ impl<'a> Chunk<'a> {
     }
 
     #[cfg(feature = "debug-bytecode")]
-    fn disassemble_instr_at(&self, offset: usize) -> (String, usize) {
+    pub fn disassemble_instr_at(
+        &self,
+        offset: usize,
+        expand_inner_chunks: bool,
+    ) -> (String, usize) {
         let instr = Instruction::try_from(self.bytes[offset]).unwrap();
         let mut buffer = String::new();
-        buffer += format!("{:0>5} {:?}", offset, instr).as_str();
+        buffer += format!("{:0>5} {:20?}", offset, instr).as_str();
 
         match instr {
-            Instruction::Push
-            | Instruction::Pop
+            Instruction::Pop
             | Instruction::Negate
             | Instruction::Add
             | Instruction::Subtract
@@ -237,7 +235,6 @@ impl<'a> Chunk<'a> {
             | Instruction::GetGlobal
             | Instruction::SetGlobal
             | Instruction::DefineGlobal
-            | Instruction::Nil
             | Instruction::Get
             | Instruction::Set
             | Instruction::CloseUpValue => {
@@ -245,23 +242,26 @@ impl<'a> Chunk<'a> {
                 return (buffer, 1);
             }
             Instruction::Constant8 => {
-                let index = self.bytes[offset + 1] as usize;
-                let constant = &self.constants[index];
-                buffer += format!("{} ({})\n", index, constant).as_str();
-                match constant {
-                    Value::Function(function) => buffer += format!("{:?}", function).as_str(),
-                    _ => {}
+                let idx = self.bytes[offset + 1] as usize;
+                let constant = &self.constants[idx];
+                buffer += format!("{} ({})\n", idx, constant).as_str();
+                if expand_inner_chunks {
+                    match constant {
+                        Value::Function(function) => buffer += format!("{:?}", function).as_str(),
+                        _ => {}
+                    }
                 }
                 return (buffer, 2);
             }
             Instruction::Constant16 => {
-                let index = ((self.bytes[offset + 2] as u16) << 8 | (self.bytes[offset + 1] as u16))
-                    as usize;
-                let constant = &self.constants[index];
-                buffer += format!("{} ({})\n", index, constant).as_str();
-                match constant {
-                    Value::Function(function) => buffer += format!("{:?}", function).as_str(),
-                    _ => {}
+                let idx = combine(self.bytes[offset + 1], self.bytes[offset + 2]) as usize;
+                let constant = &self.constants[idx];
+                buffer += format!("{} ({})\n", idx, constant).as_str();
+                if expand_inner_chunks {
+                    match constant {
+                        Value::Function(function) => buffer += format!("{:?}", function).as_str(),
+                        _ => {}
+                    }
                 }
                 return (buffer, 3);
             }
@@ -269,9 +269,8 @@ impl<'a> Chunk<'a> {
             | Instruction::JumpIfFalse
             | Instruction::JumpIfTrue
             | Instruction::Loop => {
-                let offset = ((self.bytes[offset + 2] as u16) << 8
-                    | (self.bytes[offset + 1] as u16)) as usize;
-                buffer += format!("{}\n", offset).as_str();
+                let size = combine(self.bytes[offset + 1], self.bytes[offset + 2]) as usize;
+                buffer += format!("{}\n", size).as_str();
                 return (buffer, 3);
             }
             Instruction::Call
@@ -291,7 +290,7 @@ impl<'a> Chunk<'a> {
 
                 for i in 0..up_values_count {
                     buffer += format!(
-                        "|     {i}: is_local: {}, index: {}\n",
+                        "|     {i}: is_local: {}, idx: {}\n",
                         self.bytes[offset + 2 + i * 2] != 0,
                         self.bytes[offset + 3 + i * 2] as usize
                     )
@@ -308,11 +307,16 @@ impl<'a> Chunk<'a> {
         let mut buffer = String::new();
         let mut offset = 0;
         while offset < self.len() {
-            let (as_string, progress) = self.disassemble_instr_at(offset);
+            let (as_string, progress) = self.disassemble_instr_at(offset, true);
             buffer += &as_string;
             offset += progress;
         }
         buffer
+    }
+
+    pub fn emit_byte(&mut self, byte: u8) {
+        self.bytes.push(byte);
+        self.tokens.push(None);
     }
 
     pub fn emit_instr(&mut self, instr: Instruction, token: Option<Rc<Token<'a>>>) {
@@ -320,18 +324,15 @@ impl<'a> Chunk<'a> {
         self.tokens.push(token);
     }
 
-    pub fn emit_bytes(&mut self, value: u16) {
-        self.bytes.push(value as u8);
-        self.bytes.push((value >> 8) as u8);
+    pub fn emit_bytes(&mut self, bytes: u16) {
+        split(bytes)
+            .into_iter()
+            .for_each(|byte| self.emit_byte(byte));
     }
 
-    pub fn emit_byte(&mut self, value: u8) {
-        self.bytes.push(value);
-    }
-
-    fn patch_bytes(&mut self, index: usize, value: u16) {
-        self.bytes[index] = value as u8;
-        self.bytes[index + 1] = (value >> 8) as u8;
+    fn patch_bytes(&mut self, idx: usize, bytes: u16) {
+        self.bytes[idx] = bytes as u8;
+        self.bytes[idx + 1] = (bytes >> 8) as u8;
     }
 
     fn add_constant(&mut self, value: Value<'a>) -> Result<usize, ()> {
@@ -339,10 +340,10 @@ impl<'a> Chunk<'a> {
             Value::Nil => return Ok(NIL_CONST),
             Value::Bool(val) => return Ok(if *val { TRUE_CONST } else { FALSE_CONST }),
             Value::String(string) => {
-                for (index, const_) in self.constants.iter().enumerate() {
+                for (idx, const_) in self.constants.iter().enumerate() {
                     if let Value::String(string_2) = const_ {
                         if string_2 == string {
-                            return Ok(index);
+                            return Ok(idx);
                         }
                     }
                 }
@@ -350,10 +351,10 @@ impl<'a> Chunk<'a> {
             _ => {}
         }
 
-        let index = self.constants.len();
+        let idx = self.constants.len();
         self.constants.push(value);
 
-        Ok(index)
+        Ok(idx)
     }
 
     pub fn emit_const(
@@ -361,41 +362,56 @@ impl<'a> Chunk<'a> {
         value: Value<'a>,
         token: Option<Rc<Token<'a>>>,
     ) -> Result<usize, ()> {
-        let index = self.add_constant(value)?;
+        let idx = self.add_constant(value)?;
 
-        if index <= 0xff {
+        if idx <= 0xff {
             self.emit_instr(Instruction::Constant8, token);
-            self.emit_byte(index as u8);
-        } else if index < 0xffff {
+            self.emit_byte(idx as u8);
+        } else if idx < 0xffff {
             self.emit_instr(Instruction::Constant16, token);
-            self.emit_bytes(index as u16);
+            self.emit_bytes(idx as u16);
         } else {
             //TODO find any way to report this error
             return Err(());
         }
 
-        Ok(index)
+        Ok(idx)
     }
 
-    // returns the index of the jump instruction
+    // returns the idx of the jump instruction
     pub fn emit_jump(&mut self, instr: Instruction, token: Option<Rc<Token<'a>>>) -> usize {
-        let index = self.bytes.len();
+        let idx = self.bytes.len();
         self.emit_instr(instr, token);
         self.emit_bytes(0);
-        index
+        idx
     }
 
-    pub fn emit_loop(&mut self, loop_start: usize, token: Option<Rc<Token<'a>>>) {
+    //TODO have another look at usize -> u16 conversions
+    pub fn emit_loop(&mut self, start: usize, token: Option<Rc<Token<'a>>>) {
         self.emit_instr(Instruction::Loop, token);
-        self.emit_bytes((self.len() - 1 - loop_start) as u16); //TODO make sure that it's convertable
+        let size = self.len() - 1 - start;
+        self.emit_bytes(size as u16);
     }
 
-    pub fn patch_jump(&mut self, index: usize) {
-        self.patch_bytes(index + 1, (self.len() - index) as u16);
+    pub fn patch_jump(&mut self, idx: usize) {
+        let size = self.len() - idx;
+        self.patch_bytes(idx + 1, size as u16);
     }
 
     pub fn len(&self) -> usize {
         self.bytes.len()
+    }
+
+    pub fn get_byte(&self, offset: usize) -> Option<u8> {
+        self.bytes.get(offset).cloned()
+    }
+
+    pub fn get_constant(&self, idx: usize) -> Value<'a> {
+        self.constants.get(idx).unwrap().clone()
+    }
+
+    pub fn get_token(&self, idx: usize) -> Rc<Token<'a>> {
+        Rc::clone(&self.tokens.get(idx).unwrap().as_ref().unwrap())
     }
 }
 

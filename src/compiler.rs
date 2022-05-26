@@ -22,14 +22,14 @@ struct Local<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct UpValue {
+struct UpValue {
     is_local: bool,
-    index: usize,
+    idx: usize,
 }
 
 impl UpValue {
-    fn new(is_local: bool, index: usize) -> Self {
-        Self { is_local, index }
+    fn new(is_local: bool, idx: usize) -> Self {
+        Self { is_local, idx }
     }
 }
 
@@ -80,23 +80,23 @@ impl<'a> CompilerState<'a> {
         }
     }
 
-    fn append_up_value(&mut self, is_local: bool, index: usize) -> usize {
+    fn append_up_value(&mut self, is_local: bool, idx: usize) -> usize {
         for (i, up_value) in self.up_values.iter().enumerate() {
-            if up_value.is_local == is_local && up_value.index == index {
+            if up_value.is_local == is_local && up_value.idx == idx {
                 return i;
             }
         }
         let up_value_index = self.up_values.len();
-        self.up_values.push(UpValue::new(is_local, index));
+        self.up_values.push(UpValue::new(is_local, idx));
         up_value_index
     }
 
     fn resolve_local(&self, token: Rc<Token<'a>>) -> Option<usize> {
         let mut iter = self.locals.iter().enumerate().rev();
 
-        while let Some((index, local)) = iter.next() {
+        while let Some((idx, local)) = iter.next() {
             if local.name == token {
-                return Some(index);
+                return Some(idx);
             }
         }
 
@@ -110,17 +110,17 @@ impl<'a> CompilerState<'a> {
 
         let mut enclosing_state = self.enclosing_state.as_ref().unwrap().borrow_mut();
         match enclosing_state.resolve_local(Rc::clone(&token)) {
-            Some(index) => {
-                enclosing_state.locals.get_mut(index).unwrap().is_captured = true;
+            Some(idx) => {
+                enclosing_state.locals.get_mut(idx).unwrap().is_captured = true;
                 drop(enclosing_state);
-                return Some(self.append_up_value(true, index));
+                return Some(self.append_up_value(true, idx));
             }
             _ => {}
         }
         match enclosing_state.resolve_up_value(Rc::clone(&token)) {
-            Some(index) => {
+            Some(idx) => {
                 drop(enclosing_state);
-                Some(self.append_up_value(false, index))
+                Some(self.append_up_value(false, idx))
             }
             _ => None,
         }
@@ -235,10 +235,10 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
         let state = self.state.borrow();
         match state.resolve_local(Rc::clone(&token)) {
-            Some(index) => {
+            Some(idx) => {
                 self.chunk
                     .emit_instr(Instruction::SetLocal, Some(Rc::clone(&token)));
-                self.chunk.emit_byte(index as u8);
+                self.chunk.emit_byte(idx as u8);
                 return Ok(());
             }
             _ => {}
@@ -247,10 +247,10 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
         let mut state = self.state.borrow_mut();
         match state.resolve_up_value(Rc::clone(&token)) {
-            Some(index) => {
+            Some(idx) => {
                 self.chunk
                     .emit_instr(Instruction::SetUpValue, Some(Rc::clone(&token)));
-                self.chunk.emit_byte(index as u8);
+                self.chunk.emit_byte(idx as u8);
                 return Ok(());
             }
             _ => {}
@@ -263,10 +263,10 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
     fn get_variable(&mut self, token: Rc<Token<'a>>) -> Result<(), ()> {
         let state = self.state.borrow();
         match state.resolve_local(Rc::clone(&token)) {
-            Some(index) => {
+            Some(idx) => {
                 self.chunk
                     .emit_instr(Instruction::GetLocal, Some(Rc::clone(&token)));
-                self.chunk.emit_byte(index as u8);
+                self.chunk.emit_byte(idx as u8);
                 return Ok(());
             }
             _ => {}
@@ -275,10 +275,10 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
         let mut state = self.state.borrow_mut();
         match state.resolve_up_value(Rc::clone(&token)) {
-            Some(index) => {
+            Some(idx) => {
                 self.chunk
                     .emit_instr(Instruction::GetUpValue, Some(Rc::clone(&token)));
-                self.chunk.emit_byte(index as u8);
+                self.chunk.emit_byte(idx as u8);
                 return Ok(());
             }
             _ => {}
@@ -312,7 +312,13 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             }
             Literal::String(token) => {
                 let mut content = String::new();
-                let mut iter = token.lexeme.chars().skip(1);
+                let mut iter = token.lexeme.chars();
+
+                if let Some(c) = iter.next() {
+                    if c != '"' {
+                        content.push(c)
+                    }
+                }
 
                 while let Some(c) = iter.next() {
                     if c == '\\' {
@@ -480,7 +486,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
     }
 
     //TODO check reassure that 'left' and 'right' works the way you want
-    fn get(&mut self, token: Rc<Token<'a>>, key: &Expr<'a>, instance: &Expr<'a>) -> Result<(), ()> {
+    fn get(&mut self, token: Rc<Token<'a>>, instance: &Expr<'a>, key: &Expr<'a>) -> Result<(), ()> {
         self.expr(instance)?;
         self.expr(key)?;
         self.chunk
@@ -491,8 +497,8 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
     fn set(
         &mut self,
         token: Rc<Token<'a>>,
-        key: &Expr<'a>,
         instance: &Expr<'a>,
+        key: &Expr<'a>,
         value: &Expr<'a>,
     ) -> Result<(), ()> {
         self.expr(value)?;
@@ -531,9 +537,9 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             Expr::Literal(literal) => self.literal(literal)?,
             Expr::Unary(op, expr) => self.unary(Rc::clone(op), expr)?,
             Expr::Binary(op, left, right) => self.binary(Rc::clone(op), left, right)?,
-            Expr::Get(token, key, instance) => self.get(Rc::clone(&token), key, instance)?,
-            Expr::Set(token, key, instance, value) => {
-                self.set(Rc::clone(&token), key, instance, value)?
+            Expr::Get(token, instance, key) => self.get(Rc::clone(&token), instance, key)?,
+            Expr::Set(token, instance, key, value) => {
+                self.set(Rc::clone(&token), instance, key, value)?
             }
             Expr::Call(token, callee, args) => self.call(Rc::clone(&token), callee, args)?,
         };
@@ -545,7 +551,6 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             unreachable!();
         }
 
-        //TODO define the names of the params as local variables for the inner compiler
         for param in params {
             if self.arity == 0xff {
                 self.error_at(Rc::clone(param), "عدد كثير من المعاملات");
@@ -583,7 +588,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         self.chunk.emit_byte(up_values.len() as u8); //TODO make sure this it's convertable to u8
         for up_value in up_values {
             self.chunk.emit_byte(up_value.is_local as u8);
-            self.chunk.emit_byte(up_value.index as u8);
+            self.chunk.emit_byte(up_value.idx as u8);
         }
         self.define_variable(Rc::clone(&name))?;
         Ok(())
@@ -593,7 +598,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         match initializer {
             Some(expr) => self.expr(expr)?,
             None => {
-                self.chunk.emit_instr(Instruction::Nil, None);
+                self.chunk.emit_const(Value::Nil, None)?;
             }
         };
         self.define_variable(Rc::clone(&name))
@@ -609,7 +614,9 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             Some(expr) => {
                 self.expr(&*expr)?;
             }
-            None => self.chunk.emit_instr(Instruction::Nil, None),
+            None => {
+                self.chunk.emit_const(Value::Nil, None)?;
+            }
         }
         self.chunk.emit_instr(Instruction::Return, None);
         Ok(())
@@ -620,9 +627,17 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
     }
 
     fn end_scope(&mut self) {
-        while let Some(local) = self.state.borrow().locals.iter().rev().next() {
+        let locals = self.state.borrow().locals.clone();
+        let mut iter = locals.iter().rev();
+
+        while let Some(local) = iter.next() {
             if local.depth == self.state.borrow().scope_depth {
                 self.state.borrow_mut().locals.pop();
+                if local.is_captured {
+                    self.chunk.emit_instr(Instruction::CloseUpValue, None);
+                } else {
+                    self.chunk.emit_instr(Instruction::Pop, None);
+                }
             } else {
                 break;
             }
@@ -698,14 +713,14 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             return Err(());
         }
 
-        let index = self.chunk.emit_jump(Instruction::Jump, Some(token));
+        let idx = self.chunk.emit_jump(Instruction::Jump, Some(token));
         self.state
             .borrow_mut()
             .loops
             .last_mut()
             .unwrap()
             .breaks
-            .push(index);
+            .push(idx);
         Ok(())
     }
 
@@ -760,12 +775,18 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
     }
 
     pub fn compile(&mut self) -> Result<Function<'a>, ()> {
+        if cfg!(feature = "debug-bytecode") && self.typ == CompilerType::Script {
+            println!("---");
+            println!("[DEBUG] started compiling");
+            println!("---");
+        }
+
         for stml in self.ast {
             self.stml(stml).ok();
         }
 
         if self.typ == CompilerType::Function {
-            self.chunk.emit_instr(Instruction::Nil, None);
+            self.chunk.emit_const(Value::Nil, None)?;
             self.chunk.emit_instr(Instruction::Return, None);
         }
 
