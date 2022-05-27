@@ -1,11 +1,17 @@
-use super::{chunk::Chunk, TAB_SIZE};
+use super::chunk::Chunk;
 use std::collections::HashMap;
 use std::{cell::RefCell, cmp, fmt, ops, rc::Rc};
+
+#[derive(Clone)]
+pub enum Arity {
+    Fixed(u8),
+    Variadic(u8),
+}
 
 pub struct Function<'a> {
     name: Option<String>,
     pub chunk: Chunk<'a>,
-    pub arity: u8, //TODO make it optional
+    pub arity: Arity, //TODO make it optional
 }
 
 #[cfg(feature = "debug-execution")]
@@ -36,7 +42,7 @@ impl fmt::Display for Function<'_> {
 }
 
 impl<'a> Function<'a> {
-    pub fn new(name: Option<String>, chunk: Chunk<'a>, arity: u8) -> Self {
+    pub fn new(name: Option<String>, chunk: Chunk<'a>, arity: Arity) -> Self {
         Self { name, chunk, arity }
     }
 }
@@ -86,12 +92,12 @@ impl<'a> Closure<'a> {
 }
 
 pub struct NFunction<'a> {
-    pub function: fn(Vec<Value<'a>>) -> Value<'a>,
-    pub arity: Option<u8>,
+    pub function: fn(Vec<Value<'a>>) -> Result<Value<'a>, String>,
+    pub arity: Arity,
 }
 
 impl<'a> NFunction<'a> {
-    pub fn new(function: fn(Vec<Value<'a>>) -> Value, arity: Option<u8>) -> Self {
+    pub fn new(function: fn(Vec<Value<'a>>) -> Result<Value, String>, arity: Arity) -> Self {
         NFunction { function, arity }
     }
 }
@@ -110,6 +116,20 @@ pub enum Value<'a> {
 }
 
 impl<'a> Value<'a> {
+    pub fn get_type(&self) -> &'static str {
+        match self {
+            Value::Number(_) => "عدد",
+            Value::String(_) => "نص",
+            Value::Bool(_) => "ثنائي",
+            Value::Nil => "عدم",
+            Value::List(_) => "قائمة",
+            Value::Object(_) => "كائن",
+            Value::Function(_) => unreachable!(),
+            Value::Closure(_) => "مهمة",
+            Value::NFunction(_) => "مهمة مدمجة",
+        }
+    }
+
     pub fn is_truthy(&self) -> bool {
         match self {
             Value::Nil => false,
@@ -183,12 +203,14 @@ impl fmt::Display for Value<'_> {
                 Self::List(items) => {
                     let mut buffer = String::from("[");
 
-                    if items.borrow().len() != 0 {
-                        buffer += "\n";
-                        for item in items.borrow().iter() {
-                            buffer += " ".repeat(TAB_SIZE).as_str();
-                            buffer += format!("{}،\n", item).as_str();
+                    match items.borrow().get(0) {
+                        Some(item) => {
+                            buffer += format!("{}", item).as_str();
+                            for item in items.borrow().iter().skip(1) {
+                                buffer += format!("، {}", item).as_str();
+                            }
                         }
+                        None => {}
                     }
 
                     buffer += "]";
@@ -197,12 +219,14 @@ impl fmt::Display for Value<'_> {
                 Self::Object(items) => {
                     let mut buffer = String::from("{");
 
-                    if !items.borrow().is_empty() {
-                        buffer += "\n";
-                        for (key, value) in items.borrow().iter() {
-                            buffer += " ".repeat(TAB_SIZE).as_str();
-                            buffer += format!("{}: {}،\n", key, value).as_str();
+                    match items.borrow().iter().nth(0) {
+                        Some((key, value)) => {
+                            buffer += format!("{key}: {value}،").as_str();
+                            for (key, value) in items.borrow().iter().skip(1) {
+                                buffer += format!("، {key}: {value}").as_str();
+                            }
                         }
+                        None => {}
                     }
 
                     buffer += "}";
@@ -210,7 +234,7 @@ impl fmt::Display for Value<'_> {
                 }
                 Self::Function(function) => format!("{}", function),
                 Self::Closure(closure) => format!("{}", closure.function),
-                Self::NFunction(_) => format!("<دالة محلية>"),
+                Self::NFunction(_) => format!("<مهمة مدمجة>"),
             }
         )
     }

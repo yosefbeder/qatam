@@ -1,14 +1,15 @@
 use super::{
     chunk::{Chunk, Instruction},
     debug::{debug_call, debug_ip, debug_return},
+    qatam,
     reporter::{Phase, Report, Reporter},
     token::Token,
     utils::combine,
-    value::{Closure, Function, NFunction, UpValue, Value},
+    value::{Arity, Closure, Function, NFunction, UpValue, Value},
 };
 #[cfg(feature = "debug-execution")]
 use std::fmt;
-use std::{cell::RefCell, collections::HashMap, io, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 pub struct Frame<'a> {
     closure: Rc<Closure<'a>>,
@@ -51,20 +52,6 @@ pub struct Vm<'a, 'b> {
     reporter: &'b mut dyn Reporter<'a>,
 }
 
-fn qatam_print(args: Vec<Value>) -> Value {
-    for arg in args.iter().skip(1) {
-        println!("{arg}");
-    }
-    Value::Nil
-}
-
-fn quatam_scan(_: Vec<Value>) -> Value {
-    let mut buffer = String::new();
-    io::stdin().read_line(&mut buffer).unwrap();
-    buffer.pop();
-    Value::String(buffer)
-}
-
 impl<'a, 'b> Vm<'a, 'b> {
     pub fn new(script: Function<'a>, reporter: &'b mut dyn Reporter<'a>) -> Self {
         let mut vm = Self {
@@ -79,12 +66,88 @@ impl<'a, 'b> Vm<'a, 'b> {
         };
 
         vm.globals.insert(
+            "كنص".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::as_string, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "كصحيح".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::as_int, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "كعشري".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::as_float, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "نوع".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::typ, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "حجم".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::size, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "خصائص".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::properties, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "إدفع".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::push, Arity::Fixed(2)))),
+        );
+        vm.globals.insert(
+            "إجذب".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::pop, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "الوقت".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::time, Arity::Fixed(0)))),
+        );
+        vm.globals.insert(
+            "أغلق".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::exit, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "عشوائي".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::random, Arity::Fixed(0)))),
+        );
+        vm.globals.insert(
+            "إقرأ".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::read, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "إكتب".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::write, Arity::Fixed(2)))),
+        );
+        vm.globals.insert(
+            "جا".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::sin, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "جتا".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::cos, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "ظا".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::tan, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "قتا".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::csc, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "قا".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::sec, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
+            "ظتا".to_string(),
+            Value::NFunction(Rc::new(NFunction::new(qatam::cot, Arity::Fixed(1)))),
+        );
+        vm.globals.insert(
             "إطبع".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam_print, None))),
+            Value::NFunction(Rc::new(NFunction::new(qatam::print, Arity::Variadic(1)))),
         );
         vm.globals.insert(
             "إمسح".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(quatam_scan, Some(0)))),
+            Value::NFunction(Rc::new(NFunction::new(qatam::scan, Arity::Fixed(0)))),
         );
 
         vm
@@ -585,13 +648,14 @@ impl<'a, 'b> Vm<'a, 'b> {
 
                 match self.get(idx).clone() {
                     Value::Closure(closure) => {
-                        let arity = closure.function.arity as usize;
-
-                        if args_count != arity {
-                            self.error(
-                                format!("يجب استدعاء الدالة بنفس عدد المعاملات المعلن بها\nالمعلن: {arity}\nالمعطى: {args_count}").as_str(),
-                            );
-                            return Err(());
+                        match closure.function.arity {
+                            Arity::Fixed(arity) => {
+                                if args_count != arity as usize {
+                                    self.error("تقبل هذه المهمة {arity} معطى");
+                                    return Err(());
+                                }
+                            }
+                            _ => unimplemented!(),
                         }
 
                         let frame = Frame::new(Rc::clone(&closure), idx);
@@ -601,20 +665,34 @@ impl<'a, 'b> Vm<'a, 'b> {
                     }
                     Value::NFunction(n_function) => {
                         let args = self.stack.split_off(idx);
-                        if let Some(arity) = n_function.arity {
-                            if args_count != arity as usize {
-                                self.error(
-                                    format!("يجب استدعاء الدالة بنفس عدد المعاملات المعلن بها\nالمعلن: {arity}\nالمعطى: {args_count}")
-                                        .as_str(),
-                                );
+
+                        match n_function.arity {
+                            Arity::Fixed(arity) => {
+                                if args_count != arity as usize {
+                                    self.error("تقبل هذه المهمة {arity} معطى");
+                                    return Err(());
+                                }
+                            }
+                            Arity::Variadic(arity) => {
+                                if args_count < arity as usize {
+                                    self.error(
+                                        format!("تقبل هذه المهمة {arity} معطى على الأقل").as_str(),
+                                    );
+                                    return Err(());
+                                }
+                            }
+                        }
+
+                        match (n_function.function)(args) {
+                            Ok(returned) => {
+                                self.push(returned);
+                            }
+                            Err(err) => {
+                                self.error(err.as_str());
                                 return Err(());
                             }
-                            let result = (n_function.function)(args);
-                            self.push(result);
-                        } else {
-                            let result = (n_function.function)(args);
-                            self.push(result);
-                        }
+                        };
+
                         return Ok(2);
                     }
                     _ => {

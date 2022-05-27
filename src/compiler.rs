@@ -3,7 +3,7 @@ use super::{
     chunk::{Chunk, Instruction},
     reporter::{Phase, Report, Reporter},
     token::{Token, TokenType},
-    value::{Function, Value},
+    value::{Arity, Function, Value},
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -796,7 +796,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
             Ok(Function::new(
                 self.name.clone(),
                 self.chunk.clone(),
-                self.arity,
+                Arity::Fixed(self.arity),
             ))
         }
     }

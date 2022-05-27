@@ -4,6 +4,7 @@ mod compiler;
 mod debug;
 mod operators;
 mod parser;
+mod qatam;
 mod reporter;
 mod token;
 mod tokenizer;
@@ -12,8 +13,6 @@ mod value;
 mod vm;
 
 use std::{env, fs, process};
-
-const TAB_SIZE: usize = 4;
 
 fn main() {
     use reporter::CliReporter;
