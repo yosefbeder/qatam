@@ -490,19 +490,13 @@ impl<'a, 'b> Vm<'a, 'b> {
                         return Err(());
                     }
                     Value::List(items) => {
-                        if !key.is_number() {
-                            self.error("يجب أن يكون رقم العنصر عدداً صحيحاً");
-                            return Err(());
-                        }
-
-                        let idx = key.as_number();
-
-                        if idx != idx.trunc() {
-                            self.error("يجب أن يكون رقم العنصر عدداً صحيحاً");
-                            return Err(());
-                        }
-
-                        let idx = idx as isize;
+                        let idx: isize = match key.try_into() {
+                            Ok(idx) => idx,
+                            Err(_) => {
+                                self.error("يجب أن يكون رقم العنصر عدداً صحيحاً");
+                                return Err(());
+                            }
+                        };
 
                         if idx >= 0 {
                             match items.borrow().get(idx as usize) {
@@ -519,6 +513,39 @@ impl<'a, 'b> Vm<'a, 'b> {
                             match items.borrow().iter().nth_back((idx + 1).abs() as usize) {
                                 Some(value) => {
                                     self.push(value.clone());
+                                    return Ok(1);
+                                }
+                                None => {
+                                    self.error("لا يوجد عنصر بهذا الرقم");
+                                    return Err(());
+                                }
+                            }
+                        }
+                    }
+                    Value::String(string) => {
+                        let idx: isize = match key.try_into() {
+                            Ok(idx) => idx,
+                            Err(_) => {
+                                self.error("يجب أن يكون رقم العنصر عدداً صحيحاً");
+                                return Err(());
+                            }
+                        };
+
+                        if idx >= 0 {
+                            match string.chars().nth(idx as usize) {
+                                Some(value) => {
+                                    self.push(Value::String(format!("{value}")));
+                                    return Ok(1);
+                                }
+                                None => {
+                                    self.error("لا يوجد حرف بهذا الرقم");
+                                    return Err(());
+                                }
+                            }
+                        } else {
+                            match string.chars().nth_back((idx + 1).abs() as usize) {
+                                Some(value) => {
+                                    self.push(Value::String(format!("{value}")));
                                     return Ok(1);
                                 }
                                 None => {
@@ -548,19 +575,13 @@ impl<'a, 'b> Vm<'a, 'b> {
                         items.borrow_mut().insert(key.to_string(), self.last());
                     }
                     Value::List(items) => {
-                        if !key.is_number() {
-                            self.error("يجب أن يكون رقم العنصر عدداً صحيحاً");
-                            return Err(());
-                        }
-
-                        let idx = key.as_number();
-
-                        if idx != idx.trunc() {
-                            self.error("يجب أن يكون رقم العنصر عدداً صحيحاً");
-                            return Err(());
-                        }
-
-                        let idx = idx as isize;
+                        let idx: isize = match key.try_into() {
+                            Ok(idx) => idx,
+                            Err(_) => {
+                                self.error("يجب أن يكون رقم العنصر عدداً صحيحاً");
+                                return Err(());
+                            }
+                        };
 
                         if idx >= 0 {
                             match items.borrow_mut().get_mut(idx as usize) {

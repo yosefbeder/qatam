@@ -1,6 +1,6 @@
 use super::chunk::Chunk;
 use std::collections::HashMap;
-use std::{cell::RefCell, cmp, fmt, ops, rc::Rc};
+use std::{cell::RefCell, cmp, convert::TryInto, fmt, ops, rc::Rc};
 
 #[derive(Clone)]
 pub enum Arity {
@@ -152,13 +152,6 @@ impl<'a> Value<'a> {
         }
     }
 
-    pub fn as_number(&self) -> f64 {
-        match self {
-            Value::Number(n) => *n,
-            _ => unreachable!(),
-        }
-    }
-
     pub fn as_function(&self) -> Rc<Function<'a>> {
         match self {
             Value::Function(f) => Rc::clone(f),
@@ -187,6 +180,23 @@ impl<'a> Value<'a> {
 
     pub fn are_remainderable(right: &Self, left: &Self) -> bool {
         Self::are_numbers(right, left)
+    }
+}
+
+impl TryInto<isize> for Value<'_> {
+    type Error = ();
+
+    fn try_into(self) -> Result<isize, Self::Error> {
+        match self {
+            Value::Number(n) => {
+                if n.fract() == 0.0 {
+                    Ok(n as isize)
+                } else {
+                    Err(())
+                }
+            }
+            _ => Err(()),
+        }
     }
 }
 

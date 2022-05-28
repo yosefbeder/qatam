@@ -43,7 +43,7 @@ pub fn typ(args: Vec<Value>) -> Result<Value, String> {
 
 pub fn size(args: Vec<Value>) -> Result<Value, String> {
     match args.get(1).unwrap() {
-        Value::String(string) => Ok(Value::Number(string.len() as f64)),
+        Value::String(string) => Ok(Value::Number(string.chars().count() as f64)), //TODO optimize this!
         Value::List(items) => Ok(Value::Number(items.borrow().len() as f64)),
         Value::Object(items) => Ok(Value::Number(items.borrow().len() as f64)),
         _ => Err("يجب أن يكون المدخل نص أو قائمة أو كائن".to_string()),
