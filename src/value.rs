@@ -125,8 +125,8 @@ impl<'a> Value<'a> {
             Value::List(_) => "قائمة",
             Value::Object(_) => "كائن",
             Value::Function(_) => unreachable!(),
-            Value::Closure(_) => "مهمة",
-            Value::NFunction(_) => "مهمة مدمجة",
+            Value::Closure(_) => "دالة",
+            Value::NFunction(_) => "دالة مدمجة",
         }
     }
 
@@ -234,7 +234,7 @@ impl fmt::Display for Value<'_> {
                 }
                 Self::Function(function) => format!("{}", function),
                 Self::Closure(closure) => format!("{}", closure.function),
-                Self::NFunction(_) => format!("<مهمة مدمجة>"),
+                Self::NFunction(_) => format!("<دالة مدمجة>"),
             }
         )
     }

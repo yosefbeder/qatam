@@ -94,7 +94,7 @@ impl<'a, 'b> Vm<'a, 'b> {
             Value::NFunction(Rc::new(NFunction::new(qatam::push, Arity::Fixed(2)))),
         );
         vm.globals.insert(
-            "إجذب".to_string(),
+            "إسحب".to_string(),
             Value::NFunction(Rc::new(NFunction::new(qatam::pop, Arity::Fixed(1)))),
         );
         vm.globals.insert(
