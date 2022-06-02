@@ -15,8 +15,8 @@ enum CompilerType {
 }
 
 #[derive(Debug, Clone)]
-struct Local<'a> {
-    name: Rc<Token<'a>>,
+struct Local {
+    name: Rc<Token>,
     depth: u32,
     is_captured: bool,
 }
@@ -33,8 +33,8 @@ impl UpValue {
     }
 }
 
-impl<'a> Local<'a> {
-    fn new(name: Rc<Token<'a>>, depth: u32) -> Local<'a> {
+impl Local {
+    fn new(name: Rc<Token>, depth: u32) -> Local {
         Local {
             name,
             depth,
@@ -59,17 +59,17 @@ impl Loop {
 }
 
 #[derive(Debug, Clone)]
-pub struct CompilerState<'a> {
+pub struct CompilerState {
     scope_depth: u32,
-    locals: Vec<Local<'a>>, //TODO make it limited as the stack is
+    locals: Vec<Local>, //TODO make it limited as the stack is
     up_values: Vec<UpValue>,
     had_error: bool,
     loops: Vec<Loop>,
-    enclosing_state: Option<Rc<RefCell<CompilerState<'a>>>>,
+    enclosing_state: Option<Rc<RefCell<CompilerState>>>,
 }
 
-impl<'a> CompilerState<'a> {
-    fn new(enclosing_state: Option<Rc<RefCell<CompilerState<'a>>>>) -> Self {
+impl CompilerState {
+    fn new(enclosing_state: Option<Rc<RefCell<CompilerState>>>) -> Self {
         Self {
             scope_depth: 0,
             locals: Vec::new(),
@@ -91,7 +91,7 @@ impl<'a> CompilerState<'a> {
         up_value_index
     }
 
-    fn resolve_local(&self, token: Rc<Token<'a>>) -> Option<usize> {
+    fn resolve_local(&self, token: Rc<Token>) -> Option<usize> {
         let mut iter = self.locals.iter().enumerate().rev();
 
         while let Some((idx, local)) = iter.next() {
@@ -103,7 +103,7 @@ impl<'a> CompilerState<'a> {
         None
     }
 
-    fn resolve_up_value(&mut self, token: Rc<Token<'a>>) -> Option<usize> {
+    fn resolve_up_value(&mut self, token: Rc<Token>) -> Option<usize> {
         if self.enclosing_state.is_none() {
             return None;
         }
@@ -127,18 +127,18 @@ impl<'a> CompilerState<'a> {
     }
 }
 
-pub struct Compiler<'a, 'b, 'c> {
+pub struct Compiler<'a, 'b> {
     typ: CompilerType,
     name: Option<String>,
     arity: u8,
-    ast: &'c Vec<Stml<'a>>,
-    chunk: Chunk<'a>,
-    reporter: &'b mut dyn Reporter<'a>,
-    state: Rc<RefCell<CompilerState<'a>>>,
+    ast: &'b Vec<Stml>,
+    chunk: Chunk,
+    reporter: &'a mut dyn Reporter,
+    state: Rc<RefCell<CompilerState>>,
 }
 
-impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
-    pub fn new(ast: &'c Vec<Stml<'a>>, reporter: &'b mut dyn Reporter<'a>) -> Self {
+impl<'a, 'b> Compiler<'a, 'b> {
+    pub fn new(ast: &'b Vec<Stml>, reporter: &'a mut dyn Reporter) -> Self {
         Compiler {
             typ: CompilerType::Script,
             name: None,
@@ -150,13 +150,13 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         }
     }
 
-    fn error_at(&mut self, token: Rc<Token<'a>>, msg: &str) {
+    fn error_at(&mut self, token: Rc<Token>, msg: &str) {
         let report = Report::new(Phase::Compilation, msg.to_string(), token);
         self.reporter.error(report);
         self.state.borrow_mut().had_error = true;
     }
 
-    // fn warning_at(&self, token: &Token<'b>, msg: &str) {
+    // fn warning_at(&self, token: &Token<'a>, msg: &str) {
     //     let report = Report::new(Phase::Parsing, msg.to_string(), Rc::new(token.clone()));
     //     self.reporter.warning(report);
     // }
@@ -171,9 +171,9 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
     fn new_function(
         name: Option<String>,
-        body: &'c Stml<'a>,
-        enclosing_state: Rc<RefCell<CompilerState<'a>>>,
-        reporter: &'b mut dyn Reporter<'a>,
+        body: &'b Stml,
+        enclosing_state: Rc<RefCell<CompilerState>>,
+        reporter: &'a mut dyn Reporter,
     ) -> Self {
         Compiler {
             typ: CompilerType::Function,
@@ -189,7 +189,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         }
     }
 
-    fn define_variable(&mut self, token: Rc<Token<'a>>) -> Result<(), ()> {
+    fn define_variable(&mut self, token: Rc<Token>) -> Result<(), ()> {
         let scope_depth = self.state.borrow().scope_depth;
 
         if self.in_global_scope() {
@@ -220,7 +220,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    fn set_global(&mut self, token: Rc<Token<'a>>) -> Result<(), ()> {
+    fn set_global(&mut self, token: Rc<Token>) -> Result<(), ()> {
         self.chunk
             .emit_const(Value::String(token.lexeme.clone()), Some(Rc::clone(&token)))?;
         self.chunk
@@ -228,7 +228,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         return Ok(());
     }
 
-    fn set_variable(&mut self, token: Rc<Token<'a>>) -> Result<(), ()> {
+    fn set_variable(&mut self, token: Rc<Token>) -> Result<(), ()> {
         if self.in_global_scope() {
             return self.set_global(Rc::clone(&token));
         }
@@ -260,7 +260,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         self.set_global(Rc::clone(&token))
     }
 
-    fn get_variable(&mut self, token: Rc<Token<'a>>) -> Result<(), ()> {
+    fn get_variable(&mut self, token: Rc<Token>) -> Result<(), ()> {
         let state = self.state.borrow();
         match state.resolve_local(Rc::clone(&token)) {
             Some(idx) => {
@@ -292,7 +292,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    fn literal(&mut self, literal: &Literal<'a>) -> Result<(), ()> {
+    fn literal(&mut self, literal: &Literal) -> Result<(), ()> {
         match literal {
             Literal::Number(token) => {
                 self.chunk.emit_const(
@@ -378,7 +378,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    fn unary(&mut self, op: Rc<Token<'a>>, expr: &Expr<'a>) -> Result<(), ()> {
+    fn unary(&mut self, op: Rc<Token>, expr: &Expr) -> Result<(), ()> {
         self.expr(expr)?;
         match op.typ {
             TokenType::Minus => {
@@ -394,7 +394,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    fn binary(&mut self, op: Rc<Token<'a>>, left: &Expr<'a>, right: &Expr<'a>) -> Result<(), ()> {
+    fn binary(&mut self, op: Rc<Token>, left: &Expr, right: &Expr) -> Result<(), ()> {
         if op.typ == TokenType::Equal {
             match left {
                 Expr::Variable(token) => {
@@ -486,7 +486,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
     }
 
     //TODO check reassure that 'left' and 'right' works the way you want
-    fn get(&mut self, token: Rc<Token<'a>>, instance: &Expr<'a>, key: &Expr<'a>) -> Result<(), ()> {
+    fn get(&mut self, token: Rc<Token>, instance: &Expr, key: &Expr) -> Result<(), ()> {
         self.expr(instance)?;
         self.expr(key)?;
         self.chunk
@@ -496,10 +496,10 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
     fn set(
         &mut self,
-        token: Rc<Token<'a>>,
-        instance: &Expr<'a>,
-        key: &Expr<'a>,
-        value: &Expr<'a>,
+        token: Rc<Token>,
+        instance: &Expr,
+        key: &Expr,
+        value: &Expr,
     ) -> Result<(), ()> {
         self.expr(value)?;
         self.expr(instance)?;
@@ -509,12 +509,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    fn call(
-        &mut self,
-        token: Rc<Token<'a>>,
-        callee: &Expr<'a>,
-        args: &Vec<Expr<'a>>,
-    ) -> Result<(), ()> {
+    fn call(&mut self, token: Rc<Token>, callee: &Expr, args: &Vec<Expr>) -> Result<(), ()> {
         self.expr(callee)?;
         let mut count = 0;
         for arg in args {
@@ -531,7 +526,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    pub fn expr(&mut self, expr: &Expr<'a>) -> Result<(), ()> {
+    pub fn expr(&mut self, expr: &Expr) -> Result<(), ()> {
         match expr {
             Expr::Variable(token) => self.get_variable(Rc::clone(token))?,
             Expr::Literal(literal) => self.literal(literal)?,
@@ -546,7 +541,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    fn define_params(&mut self, params: &Vec<Rc<Token<'a>>>) -> Result<(), ()> {
+    fn define_params(&mut self, params: &Vec<Rc<Token>>) -> Result<(), ()> {
         if self.typ == CompilerType::Script {
             unreachable!();
         }
@@ -565,9 +560,9 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
     fn function_decl(
         &mut self,
-        name: Rc<Token<'a>>,
-        params: &Vec<Rc<Token<'a>>>,
-        body: &Stml<'a>,
+        name: Rc<Token>,
+        params: &Vec<Rc<Token>>,
+        body: &Stml,
     ) -> Result<(), ()> {
         let mut function_compiler = Compiler::new_function(
             Some(name.lexeme.clone()),
@@ -594,7 +589,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    fn var_decl(&mut self, name: Rc<Token<'a>>, initializer: &Option<Expr<'a>>) -> Result<(), ()> {
+    fn var_decl(&mut self, name: Rc<Token>, initializer: &Option<Expr>) -> Result<(), ()> {
         match initializer {
             Some(expr) => self.expr(expr)?,
             None => {
@@ -604,7 +599,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         self.define_variable(Rc::clone(&name))
     }
 
-    fn return_stml(&mut self, token: Rc<Token<'a>>, value: &Option<Expr<'a>>) -> Result<(), ()> {
+    fn return_stml(&mut self, token: Rc<Token>, value: &Option<Expr>) -> Result<(), ()> {
         if !self.in_function() {
             self.error_at(token, "لا يمكنك استخدام 'أرجع' خارج دالة");
             return Err(());
@@ -648,9 +643,9 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
 
     fn if_else_stml(
         &mut self,
-        condition: &Expr<'a>,
-        then_branch: &Box<Stml<'a>>,
-        else_branch: &Option<Box<Stml<'a>>>,
+        condition: &Expr,
+        then_branch: &Box<Stml>,
+        else_branch: &Option<Box<Stml>>,
     ) -> Result<(), ()> {
         self.expr(condition)?;
         let false_jump = self.chunk.emit_jump(Instruction::JumpIfFalse, None);
@@ -682,7 +677,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         }
     }
 
-    fn while_stml(&mut self, condition: &Expr<'a>, body: &Box<Stml<'a>>) -> Result<(), ()> {
+    fn while_stml(&mut self, condition: &Expr, body: &Box<Stml>) -> Result<(), ()> {
         let start = self.start_loop().start;
 
         self.expr(condition)?;
@@ -697,7 +692,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    fn loop_stml(&mut self, body: &Box<Stml<'a>>) -> Result<(), ()> {
+    fn loop_stml(&mut self, body: &Box<Stml>) -> Result<(), ()> {
         let start = self.start_loop().start;
 
         self.stml(body)?;
@@ -707,7 +702,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    fn break_stml(&mut self, token: Rc<Token<'a>>) -> Result<(), ()> {
+    fn break_stml(&mut self, token: Rc<Token>) -> Result<(), ()> {
         if self.state.borrow().loops.is_empty() {
             self.error_at(token, "لا يمكنك استخدام 'قف' خارج حلقة تكرارية");
             return Err(());
@@ -724,7 +719,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    fn continue_stml(&mut self, token: Rc<Token<'a>>) -> Result<(), ()> {
+    fn continue_stml(&mut self, token: Rc<Token>) -> Result<(), ()> {
         if self.state.borrow().loops.is_empty() {
             self.error_at(token, "لا يمكنك استخدام 'أكمل' خارج حلقة تكرارية");
             return Err(());
@@ -735,7 +730,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    pub fn stml(&mut self, stml: &Stml<'a>) -> Result<(), ()> {
+    pub fn stml(&mut self, stml: &Stml) -> Result<(), ()> {
         match stml {
             Stml::Expr(expr) => {
                 self.expr(expr)?;
@@ -774,7 +769,7 @@ impl<'a, 'b, 'c> Compiler<'a, 'b, 'c> {
         Ok(())
     }
 
-    pub fn compile(&mut self) -> Result<Function<'a>, ()> {
+    pub fn compile(&mut self) -> Result<Function, ()> {
         if cfg!(feature = "debug-bytecode") && self.typ == CompilerType::Script {
             println!("---");
             println!("[DEBUG] started compiling");

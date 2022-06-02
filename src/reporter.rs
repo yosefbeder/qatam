@@ -22,27 +22,27 @@ impl fmt::Display for Phase {
 
 //TODO consider storing 'Token' in a reference counter
 #[derive(Debug)]
-pub struct Report<'a> {
+pub struct Report {
     pub phase: Phase,
     pub msg: String,
-    pub token: Rc<Token<'a>>,
+    pub token: Rc<Token>,
 }
 
-impl<'a> Report<'a> {
-    pub fn new(phase: Phase, msg: String, token: Rc<Token<'a>>) -> Self {
+impl Report {
+    pub fn new(phase: Phase, msg: String, token: Rc<Token>) -> Self {
         Report { phase, msg, token }
     }
 }
 
-impl<'a> fmt::Display for Report<'a> {
+impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}\n{}", self.msg, self.token)
     }
 }
 
-pub trait Reporter<'a> {
-    fn warning(&mut self, report: Report<'a>);
-    fn error(&mut self, report: Report<'a>);
+pub trait Reporter {
+    fn warning(&mut self, report: Report);
+    fn error(&mut self, report: Report);
 }
 
 pub struct CliReporter {
@@ -59,7 +59,7 @@ impl CliReporter {
     }
 }
 
-impl<'a> Reporter<'a> for CliReporter {
+impl Reporter for CliReporter {
     fn warning(&mut self, report: Report) {
         self.warnings_count += 1;
         println!("تحذير: {}", report);

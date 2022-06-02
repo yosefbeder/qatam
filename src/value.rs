@@ -8,13 +8,13 @@ pub enum Arity {
     Variadic(u8),
 }
 
-pub struct Function<'a> {
+pub struct Function {
     name: Option<String>,
-    pub chunk: Chunk<'a>,
+    pub chunk: Chunk,
     pub arity: Arity, //TODO make it optional
 }
 
-impl fmt::Debug for Function<'_> {
+impl fmt::Debug for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut buffer = String::new();
 
@@ -31,7 +31,7 @@ impl fmt::Debug for Function<'_> {
     }
 }
 
-impl fmt::Display for Function<'_> {
+impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.name {
             Some(name) => write!(f, "<دالة {}>", name),
@@ -40,24 +40,24 @@ impl fmt::Display for Function<'_> {
     }
 }
 
-impl<'a> Function<'a> {
-    pub fn new(name: Option<String>, chunk: Chunk<'a>, arity: Arity) -> Self {
+impl Function {
+    pub fn new(name: Option<String>, chunk: Chunk, arity: Arity) -> Self {
         Self { name, chunk, arity }
     }
 }
 
 #[derive(Clone)]
-pub enum UpValue<'a> {
+pub enum UpValue {
     Open(usize),
-    Closed(Value<'a>),
+    Closed(Value),
 }
 
-impl<'a> UpValue<'a> {
+impl UpValue {
     pub fn new(idx: usize) -> Self {
         Self::Open(idx)
     }
 
-    pub fn close(&mut self, value: Value<'a>) {
+    pub fn close(&mut self, value: Value) {
         *self = UpValue::Closed(value);
     }
 
@@ -76,13 +76,13 @@ impl<'a> UpValue<'a> {
     }
 }
 
-pub struct Closure<'a> {
-    pub function: Rc<Function<'a>>,
-    pub up_values: Vec<Rc<RefCell<UpValue<'a>>>>,
+pub struct Closure {
+    pub function: Rc<Function>,
+    pub up_values: Vec<Rc<RefCell<UpValue>>>,
 }
 
-impl<'a> Closure<'a> {
-    pub fn new(function: Rc<Function<'a>>, up_values: Vec<Rc<RefCell<UpValue<'a>>>>) -> Self {
+impl Closure {
+    pub fn new(function: Rc<Function>, up_values: Vec<Rc<RefCell<UpValue>>>) -> Self {
         Self {
             function,
             up_values,
@@ -90,31 +90,31 @@ impl<'a> Closure<'a> {
     }
 }
 
-pub struct NFunction<'a> {
-    pub function: fn(Vec<Value<'a>>) -> Result<Value<'a>, String>,
+pub struct NFunction {
+    pub function: fn(Vec<Value>) -> Result<Value, String>,
     pub arity: Arity,
 }
 
-impl<'a> NFunction<'a> {
-    pub fn new(function: fn(Vec<Value<'a>>) -> Result<Value, String>, arity: Arity) -> Self {
+impl NFunction {
+    pub fn new(function: fn(Vec<Value>) -> Result<Value, String>, arity: Arity) -> Self {
         NFunction { function, arity }
     }
 }
 
 #[derive(Clone)]
-pub enum Value<'a> {
+pub enum Value {
     Number(f64),
     String(String),
     Bool(bool),
     Nil,
-    List(Rc<RefCell<Vec<Value<'a>>>>),
-    Object(Rc<RefCell<HashMap<String, Value<'a>>>>),
-    Function(Rc<Function<'a>>),
-    Closure(Rc<Closure<'a>>),
-    NFunction(Rc<NFunction<'a>>),
+    List(Rc<RefCell<Vec<Value>>>),
+    Object(Rc<RefCell<HashMap<String, Value>>>),
+    Function(Rc<Function>),
+    Closure(Rc<Closure>),
+    NFunction(Rc<NFunction>),
 }
 
-impl<'a> Value<'a> {
+impl Value {
     pub fn get_type(&self) -> &'static str {
         match self {
             Value::Number(_) => "عدد",
@@ -151,7 +151,7 @@ impl<'a> Value<'a> {
         }
     }
 
-    pub fn as_function(&self) -> Rc<Function<'a>> {
+    pub fn as_function(&self) -> Rc<Function> {
         match self {
             Value::Function(f) => Rc::clone(f),
             _ => unreachable!(),
@@ -182,7 +182,7 @@ impl<'a> Value<'a> {
     }
 }
 
-impl TryInto<isize> for Value<'_> {
+impl TryInto<isize> for Value {
     type Error = ();
 
     fn try_into(self) -> Result<isize, Self::Error> {
@@ -199,7 +199,7 @@ impl TryInto<isize> for Value<'_> {
     }
 }
 
-impl fmt::Display for Value<'_> {
+impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -249,7 +249,7 @@ impl fmt::Display for Value<'_> {
     }
 }
 
-impl<'a> ops::Neg for Value<'a> {
+impl ops::Neg for Value {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
@@ -260,7 +260,7 @@ impl<'a> ops::Neg for Value<'a> {
     }
 }
 
-impl<'a> ops::Add for Value<'a> {
+impl ops::Add for Value {
     type Output = Self;
 
     fn add(self, other: Self) -> Self::Output {
@@ -271,7 +271,7 @@ impl<'a> ops::Add for Value<'a> {
     }
 }
 
-impl<'a> ops::Sub for Value<'a> {
+impl ops::Sub for Value {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self::Output {
@@ -282,7 +282,7 @@ impl<'a> ops::Sub for Value<'a> {
     }
 }
 
-impl<'a> ops::Mul for Value<'a> {
+impl ops::Mul for Value {
     type Output = Self;
 
     fn mul(self, other: Self) -> Self::Output {
@@ -294,7 +294,7 @@ impl<'a> ops::Mul for Value<'a> {
     }
 }
 
-impl<'a> ops::Div for Value<'a> {
+impl ops::Div for Value {
     type Output = Self;
 
     fn div(self, other: Self) -> Self::Output {
@@ -305,7 +305,7 @@ impl<'a> ops::Div for Value<'a> {
     }
 }
 
-impl<'a> ops::Rem for Value<'a> {
+impl ops::Rem for Value {
     type Output = Self;
 
     fn rem(self, other: Self) -> Self::Output {
@@ -316,7 +316,7 @@ impl<'a> ops::Rem for Value<'a> {
     }
 }
 
-impl<'a> ops::Not for Value<'a> {
+impl ops::Not for Value {
     type Output = Self;
 
     fn not(self) -> Self::Output {
@@ -324,7 +324,7 @@ impl<'a> ops::Not for Value<'a> {
     }
 }
 
-impl<'a> cmp::PartialEq for Value<'a> {
+impl cmp::PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Number(a), Self::Number(b)) => a == b,
@@ -336,7 +336,7 @@ impl<'a> cmp::PartialEq for Value<'a> {
     }
 }
 
-impl<'a> cmp::PartialOrd for Value<'a> {
+impl cmp::PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         match (self, other) {
             (Self::Number(a), Self::Number(b)) => a.partial_cmp(b),
