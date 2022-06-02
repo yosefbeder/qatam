@@ -228,7 +228,7 @@ impl Vm {
         )
     }
 
-    fn call(&mut self, argc: usize, reporter: &mut dyn Reporter) -> Result<usize, ()> {
+    fn call(&mut self, argc: usize) -> Result<(), String> {
         let idx = self.stack.len() - argc - 1;
 
         match self.get(idx).clone() {
@@ -236,8 +236,7 @@ impl Vm {
                 match closure.function.arity {
                     Arity::Fixed(arity) => {
                         if argc != arity as usize {
-                            self.error("تقبل هذه المهمة {arity} معطى", reporter);
-                            return Err(());
+                            return Err("تقبل هذه المهمة {arity} معطى".to_string());
                         }
                     }
                     _ => unimplemented!(),
@@ -246,11 +245,11 @@ impl Vm {
                 let frame = Frame::new(Rc::clone(&closure), idx);
 
                 if cfg!(feature = "debug-execution") {
-                    println!("[DEBUG] called {:?}", frame)
+                    println!("[DEBUG] called {frame:?}");
                 }
 
                 self.frames.push(frame);
-                return Ok(0);
+                Ok(())
             }
             Value::NFunction(n_function) => {
                 let args = self.stack.split_off(idx);
@@ -258,17 +257,12 @@ impl Vm {
                 match n_function.arity {
                     Arity::Fixed(arity) => {
                         if argc != arity as usize {
-                            self.error("تقبل هذه المهمة {arity} معطى", reporter);
-                            return Err(());
+                            return Err("تقبل هذه المهمة {arity} معطى".to_string());
                         }
                     }
                     Arity::Variadic(arity) => {
                         if argc < arity as usize {
-                            self.error(
-                                format!("تقبل هذه المهمة {arity} معطى على الأقل").as_str(),
-                                reporter,
-                            );
-                            return Err(());
+                            return Err(format!("تقبل هذه المهمة {arity} معطى على الأقل"));
                         }
                     }
                 }
@@ -278,30 +272,25 @@ impl Vm {
                         self.push(returned);
                     }
                     Err(err) => {
-                        self.error(err.as_str(), reporter);
-                        return Err(());
+                        return Err(err);
                     }
                 };
 
-                return Ok(2);
+                Ok(())
             }
             _ => {
-                self.error("يمكن فقط استدعاء الدوال", reporter);
-                return Err(());
+                return Err("يمكن فقط استدعاء الدوال".to_string());
             }
         }
     }
 
-    pub fn call_function(&mut self, function: Function) {
-        let frame = Frame::new(Rc::new(Closure::new(Rc::new(function), Vec::new())), 0);
-
-        if cfg!(feature = "debug-execution") {
-            println!("[DEBUG] called {:?}", frame)
-        }
-
-        self.frames.push(frame);
+    pub fn call_function(&mut self, function: Function) -> Result<(), String> {
+        self.push(Value::Closure(Rc::new(Closure::new(
+            Rc::new(function),
+            Vec::new(),
+        ))));
+        self.call(0)
     }
-
     //<<
 
     fn close_up_values(&mut self, location: usize) {
@@ -480,22 +469,23 @@ impl Vm {
                 let name = self.pop().to_string();
                 let value = self.pop();
 
-                match self.globals.insert(name.clone(), value) {
-                    Some(_) => {
-                        self.error("يوجد متغير بهذا الاسم", reporter);
-                        return Err(());
-                    }
-                    None => {}
+                if self.globals.contains_key(&name) {
+                    self.error("يوجد متغير بهذا الاسم", reporter);
+                    return Err(());
                 }
+
+                self.globals.insert(name.clone(), value);
             }
             Instruction::SetGlobal => {
                 let name = self.pop().to_string();
                 let value = self.last();
 
-                if self.globals.insert(name, value).is_none() {
+                if !self.globals.contains_key(&name) {
                     self.error("لا يوجد متغير بهذا الاسم", reporter);
                     return Err(());
                 }
+
+                self.globals.insert(name, value);
             }
             Instruction::GetGlobal => {
                 let name = self.pop().to_string();
@@ -742,7 +732,16 @@ impl Vm {
             }
             Instruction::Call => {
                 let argc = self.read_byte_oper() as usize;
-                return self.call(argc, reporter);
+
+                self.last_frame_mut().ip += 2;
+
+                match self.call(argc) {
+                    Ok(()) => return Ok(0),
+                    Err(err) => {
+                        self.error(&err, reporter);
+                        return Err(());
+                    }
+                }
             }
             Instruction::Return => {
                 let returned = self.pop();
@@ -758,7 +757,7 @@ impl Vm {
                 }
 
                 self.push(returned);
-                return Ok(2); //? to skip CALL and it's operand
+                return Ok(0);
             }
             Instruction::GetUpValue => {
                 let idx = self.read_byte_oper() as usize;
