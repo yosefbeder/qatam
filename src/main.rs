@@ -11,78 +11,109 @@ mod utils;
 mod value;
 mod vm;
 
-use std::{env, fs, process};
+use compiler::Compiler;
+use parser::Parser;
+use reporter::{CliReporter, Reporter};
+use rustyline::{error::ReadlineError, Editor};
+use std::{env, ffi::OsStr, fs, path::Path, process};
+use tokenizer::Tokenizer;
+use value::Function;
+use vm::Vm;
 
 fn main() {
-    use reporter::CliReporter;
-
     let mut args = env::args().skip(1);
-    let subcommand = args.next().unwrap_or_else(|| {
-        eprintln!("توقعت أمراً الفرعية");
-        process::exit(exitcode::USAGE);
-    });
-    match subcommand.as_str() {
-        "نفذ" => {
-            let path = args.next().unwrap_or_else(|| {
-                eprintln!("توقعت مسار الملف");
-                process::exit(exitcode::USAGE);
-            });
-            if args.next().is_some() {
-                eprintln!("عدد غير متوقع من المدخلات");
-                process::exit(exitcode::USAGE);
+    let mut reporter = CliReporter::new();
+    let mut vm = Vm::new();
+
+    if let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--الإصدار" => {
+                println!("{}", env!("CARGO_PKG_VERSION"));
             }
-            let source = fs::read_to_string(&path).unwrap_or_else(|err| {
-                eprintln!("خطأ في قراءة الملف: {}", err);
-                process::exit(exitcode::IOERR);
-            });
-            let mut cli_reporter = CliReporter::new();
-            run_file(&source, &path, &mut cli_reporter);
+            "--ساعد" => {
+                println!("{}", include_str!("../help.md"));
+            }
+            _ => {
+                if run_file(&arg, &mut vm, &mut reporter).is_err() {
+                    process::exit(exitcode::DATAERR);
+                }
+            }
         }
-        "ساعد" => {
-            println!("{}", fs::read_to_string("help.txt").unwrap());
-        }
-        _ => {
-            eprintln!("أمر فرعي غير متوقع");
-            process::exit(exitcode::USAGE);
+    } else {
+        run_repl(&mut vm, &mut reporter);
+    }
+}
+
+fn run_repl(vm: &mut Vm, reporter: &mut dyn Reporter) {
+    let mut rl = Editor::<()>::new();
+    loop {
+        let readline = rl.readline("قتام \\ ");
+        match readline {
+            Ok(line) => {
+                if line.is_empty() {
+                    break;
+                }
+
+                rl.add_history_entry(&line);
+                run_line(line, vm, reporter).ok();
+            }
+            Err(ReadlineError::Interrupted) => {
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                break;
+            }
+            Err(_) => {
+                break;
+            }
         }
     }
 }
 
-pub fn run_file<'a>(source: &'a str, file: &str, reporter: &mut dyn reporter::Reporter<'a>) {
-    use compiler::Compiler;
-    use parser::Parser;
-    use tokenizer::Tokenizer;
-    use vm::Vm;
+fn run_line(line: String, vm: &mut Vm, reporter: &mut dyn Reporter) -> Result<(), ()> {
+    let line = compile(line, None, reporter)?;
+    vm.call_function(line);
+    vm.run(reporter)
+}
 
-    let mut tokenizer = Tokenizer::new(source, file);
+fn run_file(arg: &str, vm: &mut Vm, reporter: &mut dyn Reporter) -> Result<(), ()> {
+    let path = {
+        let temp = Path::new(&arg);
+        if temp.extension() != Some(OsStr::new("قتام")) {
+            eprintln!("يجب أن يكون إمتداد الملف \"قتام\"");
+            return Err(());
+        }
+        match temp.canonicalize() {
+            Ok(path) => path,
+            Err(_) => {
+                eprintln!("الملف ليس موجوداً");
+                return Err(());
+            }
+        }
+    };
+    let source = fs::read_to_string(&path).unwrap();
+    let script = compile(source, Some(&path), reporter)?;
+    vm.call_function(script);
+    vm.run(reporter)
+}
 
-    let ast = Parser::new(&mut tokenizer, reporter)
-        .parse()
-        .unwrap_or_else(|_| {
-            eprintln!("توقفت جراء خطأ تحليلي");
-            process::exit(exitcode::DATAERR);
-        });
-
+fn compile(
+    source: String,
+    path: Option<&Path>,
+    reporter: &mut dyn Reporter,
+) -> Result<Function, ()> {
+    let mut tokenizer = Tokenizer::new(source, path);
+    let mut parser = Parser::new(&mut tokenizer, reporter);
+    let ast = parser.parse()?;
     if cfg!(feature = "debug-ast") {
         for stml in &ast {
             print!("{:?}", stml);
         }
     }
-
-    let script = Compiler::new(&ast, reporter).compile().unwrap_or_else(|_| {
-        eprintln!("توقفت جراء خطأ ترجمي");
-        process::exit(exitcode::DATAERR);
-    });
-
+    let mut compiler = Compiler::new(&ast, reporter);
+    let script = compiler.compile()?;
     if cfg!(feature = "debug-bytecode") {
         print!("{:?}", script);
     }
-
-    Vm::new(script, reporter).run().unwrap_or_else(|_| {
-        eprintln!("توقفت جراء خطأ تشغيلي");
-        process::exit(exitcode::DATAERR);
-    });
-
-    println!("تمت العملية بنجاح 👍");
-    process::exit(exitcode::OK);
+    Ok(script)
 }

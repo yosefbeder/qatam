@@ -1,17 +1,24 @@
 use super::token::{Token, TokenType};
+use std::{
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
-pub struct Tokenizer<'a> {
-    source: &'a str,
-    file: String,
+pub struct Tokenizer {
+    source: Rc<String>,
+    path: Option<PathBuf>,
     start: usize,
     current: usize,
 }
 
-impl<'a> Tokenizer<'a> {
-    pub fn new(source: &'a str, file: &str) -> Self {
+impl Tokenizer {
+    pub fn new(source: String, path: Option<&Path>) -> Self {
         Self {
-            source,
-            file: file.to_string(),
+            source: Rc::new(source),
+            path: match path {
+                Some(path) => Some(path.to_owned()),
+                None => None,
+            },
             start: 0,
             current: 0,
         }
@@ -38,7 +45,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn pop_identifier(&mut self) -> Token<'a> {
+    fn pop_identifier(&mut self) -> Token {
         let start = self.start;
         let length = self.current - self.start;
         let lexeme = self.slice(start, length);
@@ -63,20 +70,27 @@ impl<'a> Tokenizer<'a> {
                 "أمسك" => TokenType::Catch,
                 _ => TokenType::Identifier,
             },
-            self.source,
-            &self.file,
+            Rc::clone(&self.source),
+            &self.path,
             lexeme,
             start,
             length,
         )
     }
 
-    fn pop_token(&mut self, typ: TokenType) -> Token<'a> {
+    fn pop_token(&mut self, typ: TokenType) -> Token {
         let start = self.start;
         let length = self.current - self.start;
         let lexeme = self.slice(start, length);
         self.start = self.current;
-        Token::new(typ, self.source, &self.file, lexeme, start, length)
+        Token::new(
+            typ,
+            Rc::clone(&self.source),
+            &self.path,
+            lexeme,
+            start,
+            length,
+        )
     }
 
     fn slice(&self, start: usize, length: usize) -> String {
@@ -87,7 +101,7 @@ impl<'a> Tokenizer<'a> {
             .collect::<String>()
     }
 
-    fn pop_unknown_token(&mut self) -> Token<'a> {
+    fn pop_unknown_token(&mut self) -> Token {
         return self.pop_token(TokenType::Unknown);
     }
 
@@ -103,7 +117,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    pub fn next_token(&mut self) -> Token<'a> {
+    pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
 
         if let Some(c) = self.next() {

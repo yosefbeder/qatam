@@ -1,3 +1,4 @@
+//TODO prevent the VM from changing it's state on runtime errors
 use super::{
     chunk::{Chunk, Instruction},
     qatam,
@@ -8,14 +9,14 @@ use super::{
 };
 use std::{cell::RefCell, collections::HashMap, fmt, rc::Rc};
 
-pub struct Frame<'a> {
-    closure: Rc<Closure<'a>>,
+pub struct Frame {
+    closure: Rc<Closure>,
     ip: usize,
     slots_start: usize,
 }
 
-impl<'a> Frame<'a> {
-    fn new(closure: Rc<Closure<'a>>, slots_start: usize) -> Self {
+impl Frame {
+    fn new(closure: Rc<Closure>, slots_start: usize) -> Self {
         Frame {
             closure,
             ip: 0,
@@ -23,12 +24,12 @@ impl<'a> Frame<'a> {
         }
     }
 
-    fn get_up_value(&self, idx: usize) -> Rc<RefCell<UpValue<'a>>> {
+    fn get_up_value(&self, idx: usize) -> Rc<RefCell<UpValue>> {
         return Rc::clone(self.closure.up_values.get(idx).unwrap());
     }
 }
 
-impl fmt::Debug for Frame<'_> {
+impl fmt::Debug for Frame {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -39,26 +40,21 @@ impl fmt::Debug for Frame<'_> {
     }
 }
 
-pub struct Vm<'a, 'b> {
+pub struct Vm {
     //TODO make the stack static!
-    stack: Vec<Value<'a>>,
-    frames: Vec<Frame<'a>>,
-    globals: HashMap<String, Value<'a>>,
-    open_up_values: Vec<Rc<RefCell<UpValue<'a>>>>,
-    reporter: &'b mut dyn Reporter<'a>,
+    stack: Vec<Value>,
+    frames: Vec<Frame>,
+    globals: HashMap<String, Value>,
+    open_up_values: Vec<Rc<RefCell<UpValue>>>,
 }
 
-impl<'a, 'b> Vm<'a, 'b> {
-    pub fn new(script: Function<'a>, reporter: &'b mut dyn Reporter<'a>) -> Self {
+impl Vm {
+    pub fn new() -> Self {
         let mut vm = Self {
             stack: Vec::new(),
-            frames: vec![Frame::new(
-                Rc::new(Closure::new(Rc::new(script), Vec::new())),
-                0,
-            )],
+            frames: Vec::new(),
             globals: HashMap::new(),
             open_up_values: Vec::new(),
-            reporter,
         };
 
         vm.globals.insert(
@@ -149,42 +145,42 @@ impl<'a, 'b> Vm<'a, 'b> {
         vm
     }
 
-    fn error(&mut self, msg: &str) {
-        self.error_at(self.get_cur_token(), msg);
+    fn error(&mut self, msg: &str, reporter: &mut dyn Reporter) {
+        self.error_at(self.get_cur_token(), msg, reporter);
     }
 
-    fn error_at(&mut self, token: Rc<Token<'a>>, msg: &str) {
+    fn error_at(&mut self, token: Rc<Token>, msg: &str, reporter: &mut dyn Reporter) {
         let report = Report::new(Phase::Runtime, msg.to_string(), token);
-        self.reporter.error(report);
-    }
-
-    fn last_frame(&self) -> &Frame<'a> {
-        self.frames.last().unwrap()
-    }
-
-    fn last_frame_mut(&mut self) -> &mut Frame<'a> {
-        self.frames.last_mut().unwrap()
+        reporter.error(report);
     }
 
     //>> Stack manipulation
-    fn push(&mut self, value: Value<'a>) {
+    fn push(&mut self, value: Value) {
         self.stack.push(value);
     }
 
-    fn pop(&mut self) -> Value<'a> {
+    fn pop(&mut self) -> Value {
         self.stack.pop().unwrap()
     }
 
-    fn last(&self) -> Value<'a> {
+    fn last(&self) -> Value {
         self.stack.last().unwrap().clone()
     }
 
-    fn get(&self, idx: usize) -> Value<'a> {
+    fn get(&self, idx: usize) -> Value {
         self.stack.get(idx).unwrap().clone()
     }
     //<<
 
     //>> Frame manipulation
+    fn last_frame(&self) -> &Frame {
+        self.frames.last().unwrap()
+    }
+
+    fn last_frame_mut(&mut self) -> &mut Frame {
+        self.frames.last_mut().unwrap()
+    }
+
     fn get_byte(&self, offset: usize) -> Option<u8> {
         self.frames
             .last()
@@ -195,7 +191,7 @@ impl<'a, 'b> Vm<'a, 'b> {
             .get_byte(offset)
     }
 
-    fn get_constant(&self, idx: usize) -> Value<'a> {
+    fn get_constant(&self, idx: usize) -> Value {
         self.frames
             .last()
             .unwrap()
@@ -213,11 +209,11 @@ impl<'a, 'b> Vm<'a, 'b> {
         self.last_frame().slots_start
     }
 
-    fn get_cur_chunk(&self) -> &Chunk<'a> {
+    fn get_cur_chunk(&self) -> &Chunk {
         &self.last_frame().closure.function.chunk
     }
 
-    fn get_cur_token(&self) -> Rc<Token<'a>> {
+    fn get_cur_token(&self) -> Rc<Token> {
         self.get_cur_chunk().get_token(self.get_ip())
     }
 
@@ -231,6 +227,81 @@ impl<'a, 'b> Vm<'a, 'b> {
             self.get_byte(self.get_ip() + 2).unwrap(),
         )
     }
+
+    fn call(&mut self, argc: usize, reporter: &mut dyn Reporter) -> Result<usize, ()> {
+        let idx = self.stack.len() - argc - 1;
+
+        match self.get(idx).clone() {
+            Value::Closure(closure) => {
+                match closure.function.arity {
+                    Arity::Fixed(arity) => {
+                        if argc != arity as usize {
+                            self.error("تقبل هذه المهمة {arity} معطى", reporter);
+                            return Err(());
+                        }
+                    }
+                    _ => unimplemented!(),
+                }
+
+                let frame = Frame::new(Rc::clone(&closure), idx);
+
+                if cfg!(feature = "debug-execution") {
+                    println!("[DEBUG] called {:?}", frame)
+                }
+
+                self.frames.push(frame);
+                return Ok(0);
+            }
+            Value::NFunction(n_function) => {
+                let args = self.stack.split_off(idx);
+
+                match n_function.arity {
+                    Arity::Fixed(arity) => {
+                        if argc != arity as usize {
+                            self.error("تقبل هذه المهمة {arity} معطى", reporter);
+                            return Err(());
+                        }
+                    }
+                    Arity::Variadic(arity) => {
+                        if argc < arity as usize {
+                            self.error(
+                                format!("تقبل هذه المهمة {arity} معطى على الأقل").as_str(),
+                                reporter,
+                            );
+                            return Err(());
+                        }
+                    }
+                }
+
+                match (n_function.function)(args) {
+                    Ok(returned) => {
+                        self.push(returned);
+                    }
+                    Err(err) => {
+                        self.error(err.as_str(), reporter);
+                        return Err(());
+                    }
+                };
+
+                return Ok(2);
+            }
+            _ => {
+                self.error("يمكن فقط استدعاء الدوال", reporter);
+                return Err(());
+            }
+        }
+    }
+
+    pub fn call_function(&mut self, function: Function) {
+        let frame = Frame::new(Rc::new(Closure::new(Rc::new(function), Vec::new())), 0);
+
+        if cfg!(feature = "debug-execution") {
+            println!("[DEBUG] called {:?}", frame)
+        }
+
+        self.frames.push(frame);
+    }
+
     //<<
 
     fn close_up_values(&mut self, location: usize) {
@@ -255,7 +326,11 @@ impl<'a, 'b> Vm<'a, 'b> {
         self.open_up_values = new;
     }
 
-    fn execute_instr(&mut self, instr: Instruction) -> Result<usize, ()> {
+    fn execute_instr(
+        &mut self,
+        instr: Instruction,
+        reporter: &mut dyn Reporter,
+    ) -> Result<usize, ()> {
         match instr {
             Instruction::Pop => {
                 self.pop();
@@ -274,7 +349,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                 let popped = self.pop();
 
                 if !popped.is_number() {
-                    self.error("يجب أن يكون المعامل رقماً");
+                    self.error("يجب أن يكون المعامل رقماً", reporter);
                     return Err(());
                 }
 
@@ -291,7 +366,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                 let a = self.pop();
 
                 if !Value::are_subtractable(&a, &b) {
-                    self.error("لا يقبل المعاملان الطرح من بعضهما");
+                    self.error("لا يقبل المعاملان الطرح من بعضهما", reporter);
                     return Err(());
                 }
 
@@ -302,7 +377,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                 let a = self.pop();
 
                 if !Value::are_multipliable(&a, &b) {
-                    self.error("لا يقبل المعاملان الضرب في بعضهما");
+                    self.error("لا يقبل المعاملان الضرب في بعضهما", reporter);
                     return Err(());
                 }
 
@@ -313,7 +388,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                 let a = self.pop();
 
                 if !Value::are_dividable(&a, &b) {
-                    self.error("لا يقبل المعاملان القسمة على بعضهما");
+                    self.error("لا يقبل المعاملان القسمة على بعضهما", reporter);
                     return Err(());
                 }
 
@@ -324,7 +399,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                 let a = self.pop();
 
                 if !Value::are_remainderable(&a, &b) {
-                    self.error("لا يقبل المعاملان القسمة على بعضهما");
+                    self.error("لا يقبل المعاملان القسمة على بعضهما", reporter);
                     return Err(());
                 }
 
@@ -344,7 +419,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                 let a = self.pop();
 
                 if !Value::are_numbers(&a, &b) {
-                    self.error("يجب أن يكون المعاملان أرقاماً");
+                    self.error("يجب أن يكون المعاملان أرقاماً", reporter);
                     return Err(());
                 }
 
@@ -355,7 +430,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                 let a = self.pop();
 
                 if !Value::are_numbers(&a, &b) {
-                    self.error("يجب أن يكون المعاملان أرقاماً");
+                    self.error("يجب أن يكون المعاملان أرقاماً", reporter);
                     return Err(());
                 }
 
@@ -366,7 +441,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                 let a = self.pop();
 
                 if !Value::are_numbers(&a, &b) {
-                    self.error("يجب أن يكون المعاملان أرقاماً");
+                    self.error("يجب أن يكون المعاملان أرقاماً", reporter);
                     return Err(());
                 }
                 self.push(Value::Bool(a < b));
@@ -376,7 +451,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                 let a = self.pop();
 
                 if !Value::are_numbers(&a, &b) {
-                    self.error("يجب أن يكون المعاملان أرقاماً");
+                    self.error("يجب أن يكون المعاملان أرقاماً", reporter);
                     return Err(());
                 }
 
@@ -407,7 +482,7 @@ impl<'a, 'b> Vm<'a, 'b> {
 
                 match self.globals.insert(name.clone(), value) {
                     Some(_) => {
-                        self.error("يوجد متغير بهذا الاسم");
+                        self.error("يوجد متغير بهذا الاسم", reporter);
                         return Err(());
                     }
                     None => {}
@@ -418,7 +493,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                 let value = self.last();
 
                 if self.globals.insert(name, value).is_none() {
-                    self.error("لا يوجد متغير بهذا الاسم");
+                    self.error("لا يوجد متغير بهذا الاسم", reporter);
                     return Err(());
                 }
             }
@@ -426,7 +501,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                 let name = self.pop().to_string();
 
                 if !self.globals.contains_key(&name) {
-                    self.error("لا يوجد متغير بهذا الاسم");
+                    self.error("لا يوجد متغير بهذا الاسم", reporter);
                     return Err(());
                 }
 
@@ -473,7 +548,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                 match &popped {
                     Value::Object(items) => {
                         if !key.is_string() {
-                            self.error("يجب أن يكون اسم الخاصية نصاً");
+                            self.error("يجب أن يكون اسم الخاصية نصاً", reporter);
                             return Err(());
                         }
 
@@ -482,14 +557,14 @@ impl<'a, 'b> Vm<'a, 'b> {
                             return Ok(2);
                         }
 
-                        self.error("لا توجد خاصية بهذا الاسم");
+                        self.error("لا توجد خاصية بهذا الاسم", reporter);
                         return Err(());
                     }
                     Value::List(items) => {
                         let idx: isize = match key.try_into() {
                             Ok(idx) => idx,
                             Err(_) => {
-                                self.error("يجب أن يكون رقم العنصر عدداً صحيحاً");
+                                self.error("يجب أن يكون رقم العنصر عدداً صحيحاً", reporter);
                                 return Err(());
                             }
                         };
@@ -501,7 +576,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                                     return Ok(1);
                                 }
                                 None => {
-                                    self.error("لا يوجد عنصر بهذا الرقم");
+                                    self.error("لا يوجد عنصر بهذا الرقم", reporter);
                                     return Err(());
                                 }
                             }
@@ -512,7 +587,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                                     return Ok(1);
                                 }
                                 None => {
-                                    self.error("لا يوجد عنصر بهذا الرقم");
+                                    self.error("لا يوجد عنصر بهذا الرقم", reporter);
                                     return Err(());
                                 }
                             }
@@ -522,7 +597,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                         let idx: isize = match key.try_into() {
                             Ok(idx) => idx,
                             Err(_) => {
-                                self.error("يجب أن يكون رقم العنصر عدداً صحيحاً");
+                                self.error("يجب أن يكون رقم العنصر عدداً صحيحاً", reporter);
                                 return Err(());
                             }
                         };
@@ -534,7 +609,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                                     return Ok(1);
                                 }
                                 None => {
-                                    self.error("لا يوجد حرف بهذا الرقم");
+                                    self.error("لا يوجد حرف بهذا الرقم", reporter);
                                     return Err(());
                                 }
                             }
@@ -545,14 +620,17 @@ impl<'a, 'b> Vm<'a, 'b> {
                                     return Ok(1);
                                 }
                                 None => {
-                                    self.error("لا يوجد عنصر بهذا الرقم");
+                                    self.error("لا يوجد عنصر بهذا الرقم", reporter);
                                     return Err(());
                                 }
                             }
                         }
                     }
                     _ => {
-                        self.error("يمكن استخدام هذا المعامل على القوائم والكائنات فقط");
+                        self.error(
+                            "يمكن استخدام هذا المعامل على القوائم والكائنات فقط",
+                            reporter,
+                        );
                         return Err(());
                     }
                 }
@@ -564,7 +642,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                 match &popped {
                     Value::Object(items) => {
                         if !key.is_string() {
-                            self.error("يجب أن يكون اسم الخاصية نصاً");
+                            self.error("يجب أن يكون اسم الخاصية نصاً", reporter);
                             return Err(());
                         }
 
@@ -574,7 +652,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                         let idx: isize = match key.try_into() {
                             Ok(idx) => idx,
                             Err(_) => {
-                                self.error("يجب أن يكون رقم العنصر عدداً صحيحاً");
+                                self.error("يجب أن يكون رقم العنصر عدداً صحيحاً", reporter);
                                 return Err(());
                             }
                         };
@@ -586,7 +664,7 @@ impl<'a, 'b> Vm<'a, 'b> {
                                     return Ok(1);
                                 }
                                 None => {
-                                    self.error("لا يوجد عنصر بهذا الرقم");
+                                    self.error("لا يوجد عنصر بهذا الرقم", reporter);
                                     return Err(());
                                 }
                             };
@@ -601,14 +679,17 @@ impl<'a, 'b> Vm<'a, 'b> {
                                     return Ok(1);
                                 }
                                 None => {
-                                    self.error("لا يوجد عنصر بهذا الرقم");
+                                    self.error("لا يوجد عنصر بهذا الرقم", reporter);
                                     return Err(());
                                 }
                             }
                         }
                     }
                     _ => {
-                        self.error("يمكن استخدام هذا المعامل على القوائم والكائنات فقط");
+                        self.error(
+                            "يمكن استخدام هذا المعامل على القوائم والكائنات فقط",
+                            reporter,
+                        );
                         return Err(());
                     }
                 }
@@ -660,67 +741,8 @@ impl<'a, 'b> Vm<'a, 'b> {
                 return Ok(2 + up_values_count * 2);
             }
             Instruction::Call => {
-                let args_count = self.read_byte_oper() as usize;
-                let idx = self.stack.len() - args_count - 1;
-
-                match self.get(idx).clone() {
-                    Value::Closure(closure) => {
-                        match closure.function.arity {
-                            Arity::Fixed(arity) => {
-                                if args_count != arity as usize {
-                                    self.error("تقبل هذه المهمة {arity} معطى");
-                                    return Err(());
-                                }
-                            }
-                            _ => unimplemented!(),
-                        }
-
-                        let frame = Frame::new(Rc::clone(&closure), idx);
-
-                        if cfg!(feature = "debug-execution") {
-                            println!("[DEBUG] called {:?}", frame)
-                        }
-
-                        self.frames.push(frame);
-                        return Ok(0);
-                    }
-                    Value::NFunction(n_function) => {
-                        let args = self.stack.split_off(idx);
-
-                        match n_function.arity {
-                            Arity::Fixed(arity) => {
-                                if args_count != arity as usize {
-                                    self.error("تقبل هذه المهمة {arity} معطى");
-                                    return Err(());
-                                }
-                            }
-                            Arity::Variadic(arity) => {
-                                if args_count < arity as usize {
-                                    self.error(
-                                        format!("تقبل هذه المهمة {arity} معطى على الأقل").as_str(),
-                                    );
-                                    return Err(());
-                                }
-                            }
-                        }
-
-                        match (n_function.function)(args) {
-                            Ok(returned) => {
-                                self.push(returned);
-                            }
-                            Err(err) => {
-                                self.error(err.as_str());
-                                return Err(());
-                            }
-                        };
-
-                        return Ok(2);
-                    }
-                    _ => {
-                        self.error("يمكن فقط استدعاء الدوال");
-                        return Err(());
-                    }
-                }
+                let argc = self.read_byte_oper() as usize;
+                return self.call(argc, reporter);
             }
             Instruction::Return => {
                 let returned = self.pop();
@@ -770,7 +792,7 @@ impl<'a, 'b> Vm<'a, 'b> {
         Ok(1)
     }
 
-    pub fn run(&mut self) -> Result<(), ()> {
+    pub fn run(&mut self, reporter: &mut dyn Reporter) -> Result<(), ()> {
         if cfg!(feature = "debug-execution") {
             println!("---");
             println!("[DEBUG] started executing");
@@ -788,7 +810,7 @@ impl<'a, 'b> Vm<'a, 'b> {
             }
 
             let instr = Instruction::try_from(byte).unwrap();
-            let size = self.execute_instr(instr)?;
+            let size = self.execute_instr(instr, reporter)?;
             self.last_frame_mut().ip += size;
         }
 

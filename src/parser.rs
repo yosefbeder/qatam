@@ -5,16 +5,16 @@ use super::token::{Token, TokenType, BOUNDARIES};
 use super::tokenizer::Tokenizer;
 use std::rc::Rc;
 
-pub struct Parser<'a, 'b, 'c> {
-    current: Token<'b>,
-    previous: Option<Token<'b>>,
-    tokenizer: &'a mut Tokenizer<'b>,
-    reporter: &'c mut dyn Reporter<'b>,
+pub struct Parser<'a, 'b> {
+    current: Token,
+    previous: Option<Token>,
+    tokenizer: &'a mut Tokenizer,
+    reporter: &'b mut dyn Reporter,
     had_error: bool,
 }
 
-impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
-    pub fn new(tokenizer: &'a mut Tokenizer<'b>, reporter: &'c mut dyn Reporter<'b>) -> Self {
+impl<'a, 'b> Parser<'a, 'b> {
+    pub fn new(tokenizer: &'a mut Tokenizer, reporter: &'b mut dyn Reporter) -> Self {
         Self {
             current: tokenizer.next_token(),
             previous: None,
@@ -24,13 +24,13 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         }
     }
 
-    fn error_at(&mut self, phase: Phase, token: &Token<'b>, msg: &str) {
+    fn error_at(&mut self, phase: Phase, token: &Token, msg: &str) {
         let report = Report::new(phase, msg.to_string(), Rc::new(token.clone()));
         self.reporter.error(report);
         self.had_error = true;
     }
 
-    // fn warning_at(&mut self, token: &Token<'b>, msg: &str) {
+    // fn warning_at(&mut self, token: &Token, msg: &str) {
     //     let report = Report::new(Phase::Parsing, msg.to_string(), Rc::new(token.clone()));
     //     self.reporter.warning(report);
     // }
@@ -72,7 +72,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(())
     }
 
-    fn next(&mut self) -> Result<Token<'b>, ()> {
+    fn next(&mut self) -> Result<Token, ()> {
         self.advance()?;
         Ok(self.previous.as_ref().unwrap().clone())
     }
@@ -88,7 +88,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         }
     }
 
-    fn peek(&mut self, ignore_newlines: bool) -> Token<'b> {
+    fn peek(&mut self, ignore_newlines: bool) -> Token {
         loop {
             if self.current.typ == TokenType::Comment
                 || ignore_newlines && self.current.typ == TokenType::NewLine
@@ -116,7 +116,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         self.check(TokenType::EOF)
     }
 
-    fn exprs(&mut self) -> Result<Vec<Expr<'b>>, ()> {
+    fn exprs(&mut self) -> Result<Vec<Expr>, ()> {
         let mut items = vec![self.parse_expr()?];
         while self.check(TokenType::Comma) {
             self.advance()?;
@@ -128,7 +128,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(items)
     }
 
-    fn list(&mut self) -> Result<Expr<'b>, ()> {
+    fn list(&mut self) -> Result<Expr, ()> {
         let items = if self.check(TokenType::CBracket) {
             vec![]
         } else {
@@ -140,13 +140,13 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(Expr::Literal(Literal::List(items)))
     }
 
-    fn property(&mut self) -> Result<(Rc<Token<'b>>, Expr<'b>), ()> {
+    fn property(&mut self) -> Result<(Rc<Token>, Expr), ()> {
         self.consume(TokenType::Identifier, "توقعت اسم الخاصية")?;
         let key = self.previous.as_ref().unwrap().clone();
         self.consume(TokenType::Colon, "توقعت ':' بعد الاسم")?;
         Ok((Rc::new(key), self.parse_expr()?))
     }
-    fn object(&mut self) -> Result<Expr<'b>, ()> {
+    fn object(&mut self) -> Result<Expr, ()> {
         let mut items;
         if self.check(TokenType::CBrace) {
             items = vec![]
@@ -166,7 +166,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(Expr::Literal(Literal::Object(items)))
     }
 
-    fn literal(&mut self) -> Result<Expr<'b>, ()> {
+    fn literal(&mut self) -> Result<Expr, ()> {
         let token = self.previous.as_ref().unwrap().clone();
 
         match token.typ {
@@ -181,7 +181,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         }
     }
 
-    fn unary(&mut self) -> Result<Expr<'b>, ()> {
+    fn unary(&mut self) -> Result<Expr, ()> {
         let token = self.previous.as_ref().unwrap().clone();
 
         let row: usize = token.typ.into();
@@ -190,7 +190,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(Expr::Unary(Rc::new(token), Box::new(right)))
     }
 
-    fn group(&mut self) -> Result<Expr<'b>, ()> {
+    fn group(&mut self) -> Result<Expr, ()> {
         let expr = self.parse_expr()?;
         self.consume(TokenType::CParen, "توقعت ')' لإغلاق المجموعة")?;
 
@@ -198,7 +198,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     /// Parses any expression with a binding power more than or equal to `min_bp`.
-    fn expr(&mut self, min_precedence: u8, mut can_assign: bool) -> Result<Expr<'b>, ()> {
+    fn expr(&mut self, min_precedence: u8, mut can_assign: bool) -> Result<Expr, ()> {
         //                                 ^^^ I coulnd't find a better approach :)
         let mut token = self.next()?;
         let mut expr;
@@ -328,7 +328,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(expr)
     }
 
-    fn block(&mut self) -> Result<Stml<'b>, ()> {
+    fn block(&mut self) -> Result<Stml, ()> {
         let mut stmls = vec![];
         if !self.check(TokenType::CBrace) {
             while !self.at_end() && !self.check(TokenType::CBrace) {
@@ -339,7 +339,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(Stml::Block(stmls))
     }
 
-    fn return_stml(&mut self) -> Result<Stml<'b>, ()> {
+    fn return_stml(&mut self) -> Result<Stml, ()> {
         let token = self.previous.as_ref().unwrap().clone();
 
         if self.check(TokenType::NewLine) {
@@ -349,7 +349,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(Stml::Return(Rc::new(token), Some(self.parse_expr()?)))
     }
 
-    fn throw_stml(&mut self) -> Result<Stml<'b>, ()> {
+    fn throw_stml(&mut self) -> Result<Stml, ()> {
         let token = self.previous.as_ref().unwrap().clone();
 
         if self.check(TokenType::NewLine) {
@@ -359,7 +359,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(Stml::Throw(Rc::new(token), Some(self.parse_expr()?)))
     }
 
-    fn params(&mut self) -> Result<Vec<Rc<Token<'b>>>, ()> {
+    fn params(&mut self) -> Result<Vec<Rc<Token>>, ()> {
         let mut params = vec![];
 
         if self.check(TokenType::Identifier) {
@@ -378,7 +378,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(params)
     }
 
-    fn function_decl(&mut self) -> Result<Stml<'b>, ()> {
+    fn function_decl(&mut self) -> Result<Stml, ()> {
         self.consume(TokenType::Identifier, "توقعت اسم الدالة")?;
         let name = self.previous.as_ref().unwrap().clone();
         self.consume(TokenType::OParen, "توقعت '(' قبل المعاملات")?;
@@ -389,13 +389,13 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(Stml::FunctionDecl(Rc::new(name), params, Box::new(body)))
     }
 
-    fn expr_stml(&mut self) -> Result<Stml<'b>, ()> {
+    fn expr_stml(&mut self) -> Result<Stml, ()> {
         let expr = self.parse_expr()?;
 
         Ok(Stml::Expr(expr))
     }
 
-    fn while_stml(&mut self) -> Result<Stml<'b>, ()> {
+    fn while_stml(&mut self) -> Result<Stml, ()> {
         self.consume(TokenType::OParen, "توقعت '(' قبل الشرط")?;
         let condition = self.parse_expr()?;
         self.consume(TokenType::CParen, "توقعت ')' بعد الشرط")?;
@@ -404,25 +404,25 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(Stml::While(condition, Box::new(body)))
     }
 
-    fn loop_stml(&mut self) -> Result<Stml<'b>, ()> {
+    fn loop_stml(&mut self) -> Result<Stml, ()> {
         self.consume(TokenType::OBrace, "توقعت '{'")?;
         let body = self.block()?;
         Ok(Stml::Loop(Box::new(body)))
     }
 
-    fn break_stml(&mut self) -> Result<Stml<'b>, ()> {
+    fn break_stml(&mut self) -> Result<Stml, ()> {
         Ok(Stml::Break(Rc::new(
             self.previous.as_ref().unwrap().clone(),
         )))
     }
 
-    fn continue_stml(&mut self) -> Result<Stml<'b>, ()> {
+    fn continue_stml(&mut self) -> Result<Stml, ()> {
         Ok(Stml::Continue(Rc::new(
             self.previous.as_ref().unwrap().clone(),
         )))
     }
 
-    fn try_catch(&mut self) -> Result<Stml<'b>, ()> {
+    fn try_catch(&mut self) -> Result<Stml, ()> {
         self.consume(TokenType::OBrace, "توقعت '{'")?;
         let body = self.block()?;
         self.consume(TokenType::Catch, "توقعت 'أمسك'")?;
@@ -439,7 +439,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         ))
     }
 
-    fn if_else_stml(&mut self) -> Result<Stml<'b>, ()> {
+    fn if_else_stml(&mut self) -> Result<Stml, ()> {
         self.consume(TokenType::OParen, "توقعت '(' قبل الشرط")?;
         let condition = self.parse_expr()?;
         self.consume(TokenType::CParen, "توقعت ')' بعد الشرط")?;
@@ -456,7 +456,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(Stml::IfElse(condition, Box::new(if_body), else_body))
     }
 
-    fn var_decl(&mut self) -> Result<Stml<'b>, ()> {
+    fn var_decl(&mut self) -> Result<Stml, ()> {
         self.consume(TokenType::Identifier, "توقعت اسم المتغير")?;
         let name = self.previous.as_ref().unwrap().clone();
         let initializer = if self.check(TokenType::Equal) {
@@ -468,7 +468,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(Stml::VarDecl(Rc::new(name), initializer))
     }
 
-    fn stml(&mut self) -> Result<Stml<'b>, ()> {
+    fn stml(&mut self) -> Result<Stml, ()> {
         if self.check(TokenType::While) {
             self.advance()?;
             self.while_stml()
@@ -501,7 +501,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         }
     }
 
-    fn decl(&mut self) -> Result<Stml<'b>, ()> {
+    fn decl(&mut self) -> Result<Stml, ()> {
         if self.check(TokenType::Function) {
             self.advance()?;
             self.function_decl()
@@ -522,11 +522,11 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         }
     }
 
-    pub fn parse_expr(&mut self) -> Result<Expr<'b>, ()> {
+    pub fn parse_expr(&mut self) -> Result<Expr, ()> {
         self.expr(9, true)
     }
 
-    pub fn parse(&mut self) -> Result<Vec<Stml<'b>>, ()> {
+    pub fn parse(&mut self) -> Result<Vec<Stml>, ()> {
         if cfg!(feature = "debug-ast") {
             println!("---");
             println!("[DEBUG] started parsing");

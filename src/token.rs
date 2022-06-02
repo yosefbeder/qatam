@@ -1,6 +1,4 @@
-use std::cmp::PartialEq;
-use std::convert::From;
-use std::fmt;
+use std::{cmp::PartialEq, convert::From, fmt, path::PathBuf, rc::Rc};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenType {
@@ -138,34 +136,34 @@ impl From<TokenType> for usize {
 pub const NUMBER: usize = 50;
 
 #[derive(Clone)]
-pub struct Token<'a> {
+pub struct Token {
     pub typ: TokenType,
-    source: &'a str,
-    file: String,
+    source: Rc<String>,
+    path: Option<PathBuf>,
     pub lexeme: String,
     start: usize,
     length: usize,
 }
 
-impl<'a> fmt::Debug for Token<'a> {
+impl fmt::Debug for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let (line, col) = self.get_pos();
         write!(
             f,
-            "{{\n{3}type: {0:?},\n{3}lexeme: {1},\n{3}file:{2},\n{3}line: {line},\n{3}column: {col},\n}}",
+            "{{\n{3}type: {0:?},\n{3}lexeme: {1},\n{3}path:{2:?},\n{3}line: {line},\n{3}column: {col},\n}}",
             self.typ,
             self.lexeme,
-            self.file,
+            self.path,
             " ".repeat(4),
         )
     }
 }
 
-impl<'a> Token<'a> {
+impl Token {
     pub fn new(
         typ: TokenType,
-        source: &'a str,
-        file: &str,
+        source: Rc<String>,
+        path: &Option<PathBuf>,
         lexeme: String,
         start: usize,
         length: usize,
@@ -173,7 +171,10 @@ impl<'a> Token<'a> {
         Self {
             typ,
             source,
-            file: file.to_string(),
+            path: match path {
+                Some(path) => Some(path.clone()),
+                None => None,
+            },
             lexeme,
             start,
             length,
@@ -200,7 +201,7 @@ impl<'a> Token<'a> {
     }
 }
 
-impl<'a> PartialEq for Token<'a> {
+impl PartialEq for Token {
     fn eq(&self, other: &Self) -> bool {
         match self.typ {
             TokenType::Identifier
@@ -214,18 +215,26 @@ impl<'a> PartialEq for Token<'a> {
     }
 }
 
-impl<'a> fmt::Display for Token<'a> {
+impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let (line, col) = self.get_pos();
+        let content = self.source.lines().nth(line - 1).unwrap();
         let padding = " ".repeat(format!("{line}").len() + 1);
 
         let mut buffer = String::new();
-        buffer += format!("{}:{}:{}\n", self.file, line, col).as_str();
-        buffer += padding.as_str();
-        buffer += "|\n";
-        buffer += format!("{line} | {}\n", self.source.lines().nth(line - 1).unwrap()).as_str();
-        buffer += padding.as_str();
-        buffer += "| ";
+        match &self.path {
+            Some(path) => {
+                buffer += format!("{}\n", path.display()).as_str();
+                buffer += padding.as_str();
+                buffer += "|\n";
+                buffer += format!("{line} | {content}\n").as_str();
+                buffer += padding.as_str();
+                buffer += "| ";
+            }
+            None => {
+                buffer += format!("{content}\n").as_str();
+            }
+        }
         for _ in 0..col - 1 {
             buffer += " ";
         }

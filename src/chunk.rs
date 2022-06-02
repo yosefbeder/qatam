@@ -184,13 +184,13 @@ const TRUE_CONST: usize = 1;
 const FALSE_CONST: usize = 2;
 
 #[derive(Clone)]
-pub struct Chunk<'a> {
+pub struct Chunk {
     bytes: Vec<u8>,
-    constants: Vec<Value<'a>>,
-    tokens: Vec<Option<Rc<Token<'a>>>>,
+    constants: Vec<Value>,
+    tokens: Vec<Option<Rc<Token>>>,
 }
 
-impl<'a> Chunk<'a> {
+impl Chunk {
     pub fn new() -> Self {
         let mut chunk = Self {
             bytes: Vec::new(),
@@ -316,7 +316,7 @@ impl<'a> Chunk<'a> {
         self.tokens.push(None);
     }
 
-    pub fn emit_instr(&mut self, instr: Instruction, token: Option<Rc<Token<'a>>>) {
+    pub fn emit_instr(&mut self, instr: Instruction, token: Option<Rc<Token>>) {
         self.bytes.push(instr.into());
         self.tokens.push(token);
     }
@@ -332,7 +332,7 @@ impl<'a> Chunk<'a> {
         self.bytes[idx + 1] = (bytes >> 8) as u8;
     }
 
-    fn add_constant(&mut self, value: Value<'a>) -> Result<usize, ()> {
+    fn add_constant(&mut self, value: Value) -> Result<usize, ()> {
         match &value {
             Value::Nil => return Ok(NIL_CONST),
             Value::Bool(val) => return Ok(if *val { TRUE_CONST } else { FALSE_CONST }),
@@ -354,11 +354,7 @@ impl<'a> Chunk<'a> {
         Ok(idx)
     }
 
-    pub fn emit_const(
-        &mut self,
-        value: Value<'a>,
-        token: Option<Rc<Token<'a>>>,
-    ) -> Result<usize, ()> {
+    pub fn emit_const(&mut self, value: Value, token: Option<Rc<Token>>) -> Result<usize, ()> {
         let idx = self.add_constant(value)?;
 
         if idx <= 0xff {
@@ -376,7 +372,7 @@ impl<'a> Chunk<'a> {
     }
 
     // returns the idx of the jump instruction
-    pub fn emit_jump(&mut self, instr: Instruction, token: Option<Rc<Token<'a>>>) -> usize {
+    pub fn emit_jump(&mut self, instr: Instruction, token: Option<Rc<Token>>) -> usize {
         let idx = self.bytes.len();
         self.emit_instr(instr, token);
         self.emit_bytes(0);
@@ -384,7 +380,7 @@ impl<'a> Chunk<'a> {
     }
 
     //TODO have another look at usize -> u16 conversions
-    pub fn emit_loop(&mut self, start: usize, token: Option<Rc<Token<'a>>>) {
+    pub fn emit_loop(&mut self, start: usize, token: Option<Rc<Token>>) {
         self.emit_instr(Instruction::Loop, token);
         let size = self.len() - 1 - start;
         self.emit_bytes(size as u16);
@@ -403,16 +399,16 @@ impl<'a> Chunk<'a> {
         self.bytes.get(offset).cloned()
     }
 
-    pub fn get_constant(&self, idx: usize) -> Value<'a> {
+    pub fn get_constant(&self, idx: usize) -> Value {
         self.constants.get(idx).unwrap().clone()
     }
 
-    pub fn get_token(&self, idx: usize) -> Rc<Token<'a>> {
+    pub fn get_token(&self, idx: usize) -> Rc<Token> {
         Rc::clone(&self.tokens.get(idx).unwrap().as_ref().unwrap())
     }
 }
 
-impl<'a> fmt::Debug for Chunk<'a> {
+impl fmt::Debug for Chunk {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.disassemble())
     }

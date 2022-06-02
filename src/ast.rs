@@ -2,26 +2,26 @@ use super::token::Token;
 use std::{fmt, rc::Rc};
 
 //? here all of the tokens are wrapped inside an rc smart pointer because I'm going to store them also them in the bytecode
-pub enum Literal<'a> {
-    Number(Rc<Token<'a>>),
-    String(Rc<Token<'a>>),
-    Bool(Rc<Token<'a>>),
-    Nil(Rc<Token<'a>>),
-    List(Vec<Expr<'a>>),
-    Object(Vec<(Rc<Token<'a>>, Expr<'a>)>),
+pub enum Literal {
+    Number(Rc<Token>),
+    String(Rc<Token>),
+    Bool(Rc<Token>),
+    Nil(Rc<Token>),
+    List(Vec<Expr>),
+    Object(Vec<(Rc<Token>, Expr)>),
 }
 
-pub enum Expr<'a> {
-    Variable(Rc<Token<'a>>),
-    Literal(Literal<'a>),
-    Unary(Rc<Token<'a>>, Box<Expr<'a>>),
-    Binary(Rc<Token<'a>>, Box<Expr<'a>>, Box<Expr<'a>>),
-    Call(Rc<Token<'a>>, Box<Expr<'a>>, Vec<Expr<'a>>),
-    Get(Rc<Token<'a>>, Box<Expr<'a>>, Box<Expr<'a>>),
-    Set(Rc<Token<'a>>, Box<Expr<'a>>, Box<Expr<'a>>, Box<Expr<'a>>),
+pub enum Expr {
+    Variable(Rc<Token>),
+    Literal(Literal),
+    Unary(Rc<Token>, Box<Expr>),
+    Binary(Rc<Token>, Box<Expr>, Box<Expr>),
+    Call(Rc<Token>, Box<Expr>, Vec<Expr>),
+    Get(Rc<Token>, Box<Expr>, Box<Expr>),
+    Set(Rc<Token>, Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
-impl fmt::Debug for Expr<'_> {
+impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -60,22 +60,22 @@ impl fmt::Debug for Expr<'_> {
     }
 }
 
-pub enum Stml<'a> {
-    Block(Vec<Stml<'a>>),
-    FunctionDecl(Rc<Token<'a>>, Vec<Rc<Token<'a>>>, Box<Stml<'a>>),
-    VarDecl(Rc<Token<'a>>, Option<Expr<'a>>),
-    Return(Rc<Token<'a>>, Option<Expr<'a>>),
-    Throw(Rc<Token<'a>>, Option<Expr<'a>>), //? We'll need it's token
-    TryCatch(Box<Stml<'a>>, Rc<Token<'a>>, Box<Stml<'a>>),
-    IfElse(Expr<'a>, Box<Stml<'a>>, Option<Box<Stml<'a>>>),
-    While(Expr<'a>, Box<Stml<'a>>),
-    Loop(Box<Stml<'a>>),
-    Break(Rc<Token<'a>>),
-    Continue(Rc<Token<'a>>),
-    Expr(Expr<'a>),
+pub enum Stml {
+    Block(Vec<Stml>),
+    FunctionDecl(Rc<Token>, Vec<Rc<Token>>, Box<Stml>),
+    VarDecl(Rc<Token>, Option<Expr>),
+    Return(Rc<Token>, Option<Expr>),
+    Throw(Rc<Token>, Option<Expr>), //? We'll need it's token
+    TryCatch(Box<Stml>, Rc<Token>, Box<Stml>),
+    IfElse(Expr, Box<Stml>, Option<Box<Stml>>),
+    While(Expr, Box<Stml>),
+    Loop(Box<Stml>),
+    Break(Rc<Token>),
+    Continue(Rc<Token>),
+    Expr(Expr),
 }
 
-impl fmt::Debug for Stml<'_> {
+impl fmt::Debug for Stml {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
