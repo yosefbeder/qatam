@@ -1,8 +1,5 @@
 use super::token::Token;
-use std::rc::Rc;
-
-#[cfg(any(feature = "debug-ast", test))]
-use std::fmt;
+use std::{fmt, rc::Rc};
 
 //? here all of the tokens are wrapped inside an rc smart pointer because I'm going to store them also them in the bytecode
 pub enum Literal<'a> {
@@ -24,7 +21,6 @@ pub enum Expr<'a> {
     Set(Rc<Token<'a>>, Box<Expr<'a>>, Box<Expr<'a>>, Box<Expr<'a>>),
 }
 
-#[cfg(any(feature = "debug-ast", test))]
 impl fmt::Debug for Expr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -79,7 +75,6 @@ pub enum Stml<'a> {
     Expr(Expr<'a>),
 }
 
-#[cfg(any(feature = "debug-ast", test))]
 impl fmt::Debug for Stml<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

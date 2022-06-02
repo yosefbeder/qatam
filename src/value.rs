@@ -14,7 +14,6 @@ pub struct Function<'a> {
     pub arity: Arity, //TODO make it optional
 }
 
-#[cfg(feature = "debug-execution")]
 impl fmt::Debug for Function<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut buffer = String::new();

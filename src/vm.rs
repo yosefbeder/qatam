@@ -1,15 +1,12 @@
 use super::{
     chunk::{Chunk, Instruction},
-    debug::{debug_call, debug_ip, debug_return},
     qatam,
     reporter::{Phase, Report, Reporter},
     token::Token,
     utils::combine,
     value::{Arity, Closure, Function, NFunction, UpValue, Value},
 };
-#[cfg(feature = "debug-execution")]
-use std::fmt;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt, rc::Rc};
 
 pub struct Frame<'a> {
     closure: Rc<Closure<'a>>,
@@ -31,7 +28,6 @@ impl<'a> Frame<'a> {
     }
 }
 
-#[cfg(feature = "debug-execution")]
 impl fmt::Debug for Frame<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -680,7 +676,11 @@ impl<'a, 'b> Vm<'a, 'b> {
                         }
 
                         let frame = Frame::new(Rc::clone(&closure), idx);
-                        debug_call(&frame);
+
+                        if cfg!(feature = "debug-execution") {
+                            println!("[DEBUG] called {:?}", frame)
+                        }
+
                         self.frames.push(frame);
                         return Ok(0);
                     }
@@ -728,7 +728,13 @@ impl<'a, 'b> Vm<'a, 'b> {
                 self.close_up_values(frame.slots_start);
                 self.stack.truncate(frame.slots_start);
 
-                debug_return(frame, self.last_frame());
+                if cfg!(feature = "debug-execution") {
+                    let mut buffer = String::new();
+                    buffer += format!("[DEBUG] returned from {:?}\n", frame).as_str();
+                    buffer += format!("|       to {:?}", self.last_frame()).as_str();
+                    println!("{}", buffer);
+                }
+
                 self.push(returned);
                 return Ok(2); //? to skip CALL and it's operand
             }
@@ -772,7 +778,14 @@ impl<'a, 'b> Vm<'a, 'b> {
         }
 
         while let Some(byte) = self.get_byte(self.get_ip()) {
-            debug_ip(self.get_cur_chunk(), self.get_ip());
+            if cfg!(feature = "debug-execution") {
+                print!(
+                    "{}",
+                    self.get_cur_chunk()
+                        .disassemble_instr_at(self.get_ip(), false)
+                        .0
+                );
+            }
 
             let instr = Instruction::try_from(byte).unwrap();
             let size = self.execute_instr(instr)?;

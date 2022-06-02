@@ -10,7 +10,7 @@ exitcode = "1.1.2"
 rand = "0.8.4"
 
 [features]
-debug = ["debug-ast", "debug-bytecode"]
+debug = ["debug-ast", "debug-bytecode", "debug-execution"]
 debug-ast = []
-debug-bytecode = ["debug-execution"]
+debug-bytecode = []
 debug-execution = []
