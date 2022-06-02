@@ -72,7 +72,7 @@ fn run_repl(vm: &mut Vm, reporter: &mut dyn Reporter) {
 
 fn run_line(line: String, vm: &mut Vm, reporter: &mut dyn Reporter) -> Result<(), ()> {
     let line = compile(line, None, reporter)?;
-    vm.call_function(line);
+    vm.call_function(line).unwrap();
     vm.run(reporter)
 }
 
@@ -93,7 +93,7 @@ fn run_file(arg: &str, vm: &mut Vm, reporter: &mut dyn Reporter) -> Result<(), (
     };
     let source = fs::read_to_string(&path).unwrap();
     let script = compile(source, Some(&path), reporter)?;
-    vm.call_function(script);
+    vm.call_function(script).unwrap();
     vm.run(reporter)
 }
 
