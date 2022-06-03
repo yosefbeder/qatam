@@ -1,8 +1,7 @@
-use super::chunk::Chunk;
-use std::collections::HashMap;
-use std::{cell::RefCell, cmp, convert::TryInto, fmt, ops, rc::Rc};
+use super::{chunk::Chunk, vm::Vm};
+use std::{cell::RefCell, cmp, collections::HashMap, convert::TryInto, fmt, fs::File, ops, rc::Rc};
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum Arity {
     Fixed(u8),
     Variadic(u8),
@@ -11,7 +10,7 @@ pub enum Arity {
 pub struct Function {
     name: Option<String>,
     pub chunk: Chunk,
-    pub arity: Arity, //TODO make it optional
+    pub arity: Arity,
 }
 
 impl fmt::Debug for Function {
@@ -90,16 +89,7 @@ impl Closure {
     }
 }
 
-pub struct NFunction {
-    pub function: fn(Vec<Value>) -> Result<Value, String>,
-    pub arity: Arity,
-}
-
-impl NFunction {
-    pub fn new(function: fn(Vec<Value>) -> Result<Value, String>, arity: Arity) -> Self {
-        NFunction { function, arity }
-    }
-}
+pub type Native = fn(&Vm, usize) -> Result<Value, String>;
 
 #[derive(Clone)]
 pub enum Value {
@@ -111,7 +101,8 @@ pub enum Value {
     Object(Rc<RefCell<HashMap<String, Value>>>),
     Function(Rc<Function>),
     Closure(Rc<Closure>),
-    NFunction(Rc<NFunction>),
+    Native(Native),
+    File(Rc<RefCell<File>>),
 }
 
 impl Value {
@@ -125,7 +116,8 @@ impl Value {
             Value::Object(_) => "كائن",
             Value::Function(_) => unreachable!(),
             Value::Closure(_) => "دالة",
-            Value::NFunction(_) => "دالة مدمجة",
+            Value::Native(_) => "دالة مدمجة",
+            Value::File(_) => "ملف",
         }
     }
 
@@ -243,7 +235,8 @@ impl fmt::Display for Value {
                 }
                 Self::Function(function) => format!("{}", function),
                 Self::Closure(closure) => format!("{}", closure.function),
-                Self::NFunction(_) => format!("<دالة مدمجة>"),
+                Self::Native(_) => format!("<دالة مدمجة>"),
+                Self::File(file) => format!("<ملف {:?}>", file.borrow()),
             }
         )
     }

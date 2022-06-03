@@ -1,9 +1,9 @@
 mod ast;
 mod chunk;
 mod compiler;
+mod natives;
 mod operators;
 mod parser;
-mod qatam;
 mod reporter;
 mod token;
 mod tokenizer;
@@ -15,7 +15,13 @@ use compiler::Compiler;
 use parser::Parser;
 use reporter::{CliReporter, Reporter};
 use rustyline::{error::ReadlineError, Editor};
-use std::{env, ffi::OsStr, fs, path::Path, process};
+use std::{
+    env,
+    ffi::OsStr,
+    fs,
+    path::{Path, PathBuf},
+    process,
+};
 use tokenizer::Tokenizer;
 use value::Function;
 use vm::Vm;
@@ -77,24 +83,35 @@ fn run_line(line: String, vm: &mut Vm, reporter: &mut dyn Reporter) -> Result<()
 }
 
 fn run_file(arg: &str, vm: &mut Vm, reporter: &mut dyn Reporter) -> Result<(), ()> {
-    let path = {
-        let temp = Path::new(&arg);
-        if temp.extension() != Some(OsStr::new("قتام")) {
-            eprintln!("يجب أن يكون إمتداد الملف \"قتام\"");
-            return Err(());
-        }
-        match temp.canonicalize() {
-            Ok(path) => path,
-            Err(_) => {
-                eprintln!("الملف ليس موجوداً");
-                return Err(());
-            }
-        }
-    };
+    let path = generate_path(arg)?;
+    if let Some(dir) = path.parent() {
+        vm.working_dir = dir.to_owned();
+    }
     let source = fs::read_to_string(&path).unwrap();
     let script = compile(source, Some(&path), reporter)?;
     vm.call_function(script).unwrap();
     vm.run(reporter)
+}
+
+/// returns the absolute path of the file if it exists.
+fn generate_path(arg: &str) -> Result<PathBuf, ()> {
+    let path = PathBuf::from(arg);
+
+    if !path.is_file() {
+        eprintln!("الملف غير موجود");
+        return Err(());
+    }
+
+    if path.extension() != Some(OsStr::new("قتام")) {
+        eprintln!("يجب أن يكون إمتداد الملف \"قتام\"");
+        return Err(());
+    }
+
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        Ok(path.canonicalize().unwrap())
+    }
 }
 
 fn compile(
@@ -103,15 +120,15 @@ fn compile(
     reporter: &mut dyn Reporter,
 ) -> Result<Function, ()> {
     let mut tokenizer = Tokenizer::new(source, path);
-    let mut parser = Parser::new(&mut tokenizer, reporter);
-    let ast = parser.parse()?;
+    let mut parser = Parser::new(&mut tokenizer);
+    let ast = parser.parse(reporter)?;
     if cfg!(feature = "debug-ast") {
         for stml in &ast {
             print!("{:?}", stml);
         }
     }
-    let mut compiler = Compiler::new(&ast, reporter);
-    let script = compiler.compile()?;
+    let mut compiler = Compiler::new(&ast);
+    let script = compiler.compile(reporter)?;
     if cfg!(feature = "debug-bytecode") {
         print!("{:?}", script);
     }

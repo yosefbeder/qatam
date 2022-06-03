@@ -1,13 +1,21 @@
 //TODO prevent the VM from changing it's state on runtime errors
 use super::{
     chunk::{Chunk, Instruction},
-    qatam,
+    natives,
     reporter::{Phase, Report, Reporter},
     token::Token,
     utils::combine,
-    value::{Arity, Closure, Function, NFunction, UpValue, Value},
+    value::{Arity, Closure, Function, UpValue, Value},
 };
-use std::{cell::RefCell, collections::HashMap, fmt, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    fmt,
+    fs::File,
+    path::{Path, PathBuf},
+    rc::Rc,
+    time::SystemTime,
+};
 
 pub struct Frame {
     closure: Rc<Closure>,
@@ -46,6 +54,8 @@ pub struct Vm {
     frames: Vec<Frame>,
     globals: HashMap<String, Value>,
     open_up_values: Vec<Rc<RefCell<UpValue>>>,
+    pub created_at: SystemTime,
+    pub working_dir: PathBuf,
 }
 
 impl Vm {
@@ -55,92 +65,14 @@ impl Vm {
             frames: Vec::new(),
             globals: HashMap::new(),
             open_up_values: Vec::new(),
+            created_at: SystemTime::now(),
+            working_dir: Path::new(".").canonicalize().unwrap(),
         };
 
-        vm.globals.insert(
-            "كنص".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::as_string, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "كصحيح".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::as_int, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "كعشري".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::as_float, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "نوع".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::typ, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "حجم".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::size, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "خصائص".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::properties, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "إدفع".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::push, Arity::Fixed(2)))),
-        );
-        vm.globals.insert(
-            "إسحب".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::pop, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "الوقت".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::time, Arity::Fixed(0)))),
-        );
-        vm.globals.insert(
-            "أغلق".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::exit, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "عشوائي".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::random, Arity::Fixed(0)))),
-        );
-        vm.globals.insert(
-            "إقرأ".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::read, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "إكتب".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::write, Arity::Fixed(2)))),
-        );
-        vm.globals.insert(
-            "جا".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::sin, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "جتا".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::cos, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "ظا".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::tan, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "قتا".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::csc, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "قا".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::sec, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "ظتا".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::cot, Arity::Fixed(1)))),
-        );
-        vm.globals.insert(
-            "إطبع".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::print, Arity::Variadic(1)))),
-        );
-        vm.globals.insert(
-            "إمسح".to_string(),
-            Value::NFunction(Rc::new(NFunction::new(qatam::scan, Arity::Fixed(0)))),
-        );
+        for (key, native) in natives::NATIVES.iter() {
+            vm.globals
+                .insert(key.to_string(), Value::Native(native.clone()));
+        }
 
         vm
     }
@@ -153,6 +85,105 @@ impl Vm {
         let report = Report::new(Phase::Runtime, msg.to_string(), token);
         reporter.error(report);
     }
+
+    //>> Native functions utilities
+    pub fn get_any(&self, idx: usize, argc: usize) -> Value {
+        self.get((self.stack.len() - 1) - argc + idx)
+    }
+
+    pub fn get_number(&self, idx: usize, argc: usize) -> Result<f64, String> {
+        if let Value::Number(n) = self.get_any(idx, argc) {
+            Ok(n)
+        } else {
+            Err(format!("يجب أن يكون المدخل {idx} عدداً"))
+        }
+    }
+
+    pub fn get_int(&self, idx: usize, argc: usize) -> Result<i32, String> {
+        if let Value::Number(n) = self.get_any(idx, argc) {
+            if n.fract() == 0.0 {
+                Ok(n as i32)
+            } else {
+                Err(format!("يجب أن يكون المدخل {idx} عدداً صحيحاً"))
+            }
+        } else {
+            Err(format!("يجب أن يكون المدخل {idx} عدداً صحيحاً"))
+        }
+    }
+
+    pub fn get_pos_int(&self, idx: usize, argc: usize) -> Result<u32, String> {
+        if let Value::Number(n) = self.get_any(idx, argc) {
+            if n.fract() == 0.0 && n > 0.0 {
+                Ok(n as u32)
+            } else {
+                Err(format!("يجب أن يكون المدخل {idx} عدداً صحيحاً موجباً"))
+            }
+        } else {
+            Err(format!("يجب أن يكون المدخل {idx} عدداً صحيحاً موجباً"))
+        }
+    }
+
+    pub fn get_string(&self, idx: usize, argc: usize) -> Result<String, String> {
+        if let Value::String(string) = self.get_any(idx, argc) {
+            Ok(string)
+        } else {
+            Err(format!("يجب أن يكون المدخل {idx} نص"))
+        }
+    }
+
+    pub fn get_char(&self, idx: usize, argc: usize) -> Result<char, String> {
+        if let Value::String(string) = self.get_any(idx, argc) {
+            if string.chars().count() == 1 {
+                Ok(string.chars().nth(0).unwrap())
+            } else {
+                Err(format!("يجب أن يكون المدخل {idx} نص ذي حرف واحد"))
+            }
+        } else {
+            Err(format!("يجب أن يكون المدخل {idx} نص ذي حرف واحد"))
+        }
+    }
+
+    pub fn get_object(
+        &self,
+        idx: usize,
+        argc: usize,
+    ) -> Result<Rc<RefCell<HashMap<String, Value>>>, String> {
+        if let Value::Object(items) = self.get_any(idx, argc) {
+            Ok(items)
+        } else {
+            Err(format!("يجب أن يكون المدخل {idx} مجموعة"))
+        }
+    }
+
+    pub fn get_list(&self, idx: usize, argc: usize) -> Result<Rc<RefCell<Vec<Value>>>, String> {
+        if let Value::List(items) = self.get_any(idx, argc) {
+            Ok(items)
+        } else {
+            Err(format!("يجب أن يكون المدخل {idx} قائمة"))
+        }
+    }
+
+    pub fn get_file(&self, idx: usize, argc: usize) -> Result<Rc<RefCell<File>>, String> {
+        if let Value::File(file) = self.get_any(idx, argc) {
+            Ok(file)
+        } else {
+            Err(format!("يجب أن يكون المدخل {idx} ملف"))
+        }
+    }
+
+    pub fn get_path(&self, idx: usize, argc: usize) -> Result<PathBuf, String> {
+        if let Value::String(string) = self.get_any(idx, argc) {
+            let path = Path::new(&string);
+            if path.is_absolute() {
+                Ok(path.to_path_buf())
+            } else {
+                Ok(self.working_dir.join(path))
+            }
+        } else {
+            Err(format!("يجب أن يكون المدخل {idx} مسار"))
+        }
+    }
+    //<<
 
     //>> Stack manipulation
     fn push(&mut self, value: Value) {
@@ -228,19 +259,35 @@ impl Vm {
         )
     }
 
+    pub fn check_arity(arity: Arity, argc: usize) -> Result<(), String> {
+        match arity {
+            Arity::Fixed(arity) => {
+                if argc != arity as usize {
+                    Err(format!(
+                        "توقعت عدد {arity} من المدخلات ولكن حصلت على {argc} بدلاً من ذللك"
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+            Arity::Variadic(arity) => {
+                if argc < arity as usize {
+                    Err(format!(
+                        "توقعت على الأقل عدد {arity} من المدخلات ولكن حصلت على {argc} بدلاً من ذلك"
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    }
+
     fn call(&mut self, argc: usize) -> Result<(), String> {
         let idx = self.stack.len() - argc - 1;
 
         match self.get(idx).clone() {
             Value::Closure(closure) => {
-                match closure.function.arity {
-                    Arity::Fixed(arity) => {
-                        if argc != arity as usize {
-                            return Err("تقبل هذه المهمة {arity} معطى".to_string());
-                        }
-                    }
-                    _ => unimplemented!(),
-                }
+                Vm::check_arity(closure.function.arity, argc)?;
 
                 let frame = Frame::new(Rc::clone(&closure), idx);
 
@@ -251,33 +298,14 @@ impl Vm {
                 self.frames.push(frame);
                 Ok(())
             }
-            Value::NFunction(n_function) => {
-                let args = self.stack.split_off(idx);
-
-                match n_function.arity {
-                    Arity::Fixed(arity) => {
-                        if argc != arity as usize {
-                            return Err("تقبل هذه المهمة {arity} معطى".to_string());
-                        }
-                    }
-                    Arity::Variadic(arity) => {
-                        if argc < arity as usize {
-                            return Err(format!("تقبل هذه المهمة {arity} معطى على الأقل"));
-                        }
-                    }
+            Value::Native(n_function) => match n_function(self, argc) {
+                Ok(returned) => {
+                    self.stack.truncate(idx);
+                    self.stack.push(returned);
+                    Ok(())
                 }
-
-                match (n_function.function)(args) {
-                    Ok(returned) => {
-                        self.push(returned);
-                    }
-                    Err(err) => {
-                        return Err(err);
-                    }
-                };
-
-                Ok(())
-            }
+                Err(msg) => Err(msg),
+            },
             _ => {
                 return Err("يمكن فقط استدعاء الدوال".to_string());
             }
@@ -544,7 +572,7 @@ impl Vm {
 
                         if let Some(value) = items.borrow().get(&key.to_string()) {
                             self.push(value.clone());
-                            return Ok(2);
+                            return Ok(1);
                         }
 
                         self.error("لا توجد خاصية بهذا الاسم", reporter);
@@ -732,13 +760,14 @@ impl Vm {
             }
             Instruction::Call => {
                 let argc = self.read_byte_oper() as usize;
+                let token = self.get_cur_token();
 
                 self.last_frame_mut().ip += 2;
 
                 match self.call(argc) {
                     Ok(()) => return Ok(0),
                     Err(err) => {
-                        self.error(&err, reporter);
+                        self.error_at(token, &err, reporter);
                         return Err(());
                     }
                 }
