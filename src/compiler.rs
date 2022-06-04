@@ -805,6 +805,8 @@ impl<'b> Compiler<'b> {
             Stml::Loop(body) => self.loop_stml(body, reporter)?,
             Stml::Break(token) => self.break_stml(Rc::clone(token), reporter)?,
             Stml::Continue(token) => self.continue_stml(Rc::clone(token), reporter)?,
+            Stml::Import(_, _) => todo!(),
+            Stml::Export(_, _) => todo!(),
             Stml::TryCatch(_, _, _) => unimplemented!(),
         }
         Ok(())

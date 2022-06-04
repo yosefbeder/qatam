@@ -65,13 +65,15 @@ pub enum Stml {
     FunctionDecl(Rc<Token>, Vec<Rc<Token>>, Box<Stml>),
     VarDecl(Rc<Token>, Option<Expr>),
     Return(Rc<Token>, Option<Expr>),
-    Throw(Rc<Token>, Option<Expr>), //? We'll need it's token
+    Throw(Rc<Token>, Option<Expr>),
     TryCatch(Box<Stml>, Rc<Token>, Box<Stml>),
     IfElse(Expr, Box<Stml>, Option<Box<Stml>>),
     While(Expr, Box<Stml>),
     Loop(Box<Stml>),
     Break(Rc<Token>),
     Continue(Rc<Token>),
+    Import(Rc<Token>, Rc<Token>),
+    Export(Rc<Token>, Box<Stml>),
     Expr(Expr),
 }
 
@@ -172,6 +174,16 @@ impl fmt::Debug for Stml {
                 }
                 Stml::Break(_) => "<قف>\n".to_string(),
                 Stml::Continue(_) => "<أكمل>\n".to_string(),
+                Stml::Import(name, path) => format!(
+                    "<Export {} من {}>\n",
+                    name.lexeme.clone(),
+                    path.lexeme.clone()
+                ),
+                Stml::Export(_, stml) => {
+                    let mut buffer = String::new();
+                    buffer += &format!("<تصدير\n{stml:?}>\n");
+                    buffer
+                }
                 Stml::TryCatch(_, _, _) => unimplemented!(),
             }
         )

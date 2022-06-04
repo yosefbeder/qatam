@@ -57,4 +57,7 @@ pub const OPERATORS: [(Option<u8>, Option<u8>, Option<u8>, Option<Associativity>
     (None, None, None, None),                            // 47
     (None, None, None, None),                            // 48
     (None, None, None, None),                            // 49
+    (None, None, None, None),                            // 50
+    (None, None, None, None),                            // 51
+    (None, None, None, None),                            // 52
 ];

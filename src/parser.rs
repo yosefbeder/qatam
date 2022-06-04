@@ -73,7 +73,7 @@ impl<'a> Parser<'a> {
 
     fn next(&mut self, reporter: &mut dyn Reporter) -> Result<Token, ()> {
         self.advance(reporter)?;
-        Ok(self.previous.as_ref().unwrap().clone())
+        Ok(self.clone_previous())
     }
 
     fn consume(
@@ -120,6 +120,10 @@ impl<'a> Parser<'a> {
         self.check(TokenType::EOF)
     }
 
+    fn clone_previous(&self) -> Token {
+        self.previous.as_ref().unwrap().clone()
+    }
+
     fn exprs(&mut self, reporter: &mut dyn Reporter) -> Result<Vec<Expr>, ()> {
         let mut items = vec![self.parse_expr(reporter)?];
         while self.check(TokenType::Comma) {
@@ -146,7 +150,7 @@ impl<'a> Parser<'a> {
 
     fn property(&mut self, reporter: &mut dyn Reporter) -> Result<(Rc<Token>, Expr), ()> {
         self.consume(TokenType::Identifier, "توقعت اسم الخاصية", reporter)?;
-        let key = self.previous.as_ref().unwrap().clone();
+        let key = self.clone_previous();
         self.consume(TokenType::Colon, "توقعت ':' بعد الاسم", reporter)?;
         Ok((Rc::new(key), self.parse_expr(reporter)?))
     }
@@ -171,7 +175,7 @@ impl<'a> Parser<'a> {
     }
 
     fn literal(&mut self, reporter: &mut dyn Reporter) -> Result<Expr, ()> {
-        let token = self.previous.as_ref().unwrap().clone();
+        let token = self.clone_previous();
 
         match token.typ {
             TokenType::Identifier => Ok(Expr::Variable(Rc::new(token))),
@@ -186,7 +190,7 @@ impl<'a> Parser<'a> {
     }
 
     fn unary(&mut self, reporter: &mut dyn Reporter) -> Result<Expr, ()> {
-        let token = self.previous.as_ref().unwrap().clone();
+        let token = self.clone_previous();
 
         let row: usize = token.typ.into();
         let prefix_precedence = OPERATORS[row].0.unwrap();
@@ -285,9 +289,7 @@ impl<'a> Parser<'a> {
                     //TODO>> abstract
                     TokenType::Period => {
                         self.consume(TokenType::Identifier, "توقعت اسم الخاصية", reporter)?;
-                        let key = Expr::Literal(Literal::String(Rc::new(
-                            self.previous.as_ref().unwrap().clone(),
-                        )));
+                        let key = Expr::Literal(Literal::String(Rc::new(self.clone_previous())));
 
                         if self.check(TokenType::Equal) {
                             token = self.next(reporter)?;
@@ -359,7 +361,7 @@ impl<'a> Parser<'a> {
     }
 
     fn return_stml(&mut self, reporter: &mut dyn Reporter) -> Result<Stml, ()> {
-        let token = self.previous.as_ref().unwrap().clone();
+        let token = self.clone_previous();
 
         if self.check(TokenType::NewLine) {
             return Ok(Stml::Throw(Rc::new(token), None));
@@ -372,7 +374,7 @@ impl<'a> Parser<'a> {
     }
 
     fn throw_stml(&mut self, reporter: &mut dyn Reporter) -> Result<Stml, ()> {
-        let token = self.previous.as_ref().unwrap().clone();
+        let token = self.clone_previous();
 
         if self.check(TokenType::NewLine) {
             return Ok(Stml::Throw(Rc::new(token), None));
@@ -389,7 +391,7 @@ impl<'a> Parser<'a> {
 
         if self.check(TokenType::Identifier) {
             self.consume(TokenType::Identifier, "توقعت اسم معامل", reporter)?;
-            params.push(Rc::new(self.previous.as_ref().unwrap().clone()));
+            params.push(Rc::new(self.clone_previous()));
         }
         while self.check(TokenType::Comma) {
             self.advance(reporter)?;
@@ -397,7 +399,7 @@ impl<'a> Parser<'a> {
                 break;
             }
             self.consume(TokenType::Identifier, "توقعت اسم معامل", reporter)?;
-            params.push(Rc::new(self.previous.as_ref().unwrap().clone()));
+            params.push(Rc::new(self.clone_previous()));
         }
 
         Ok(params)
@@ -405,7 +407,7 @@ impl<'a> Parser<'a> {
 
     fn function_decl(&mut self, reporter: &mut dyn Reporter) -> Result<Stml, ()> {
         self.consume(TokenType::Identifier, "توقعت اسم الدالة", reporter)?;
-        let name = self.previous.as_ref().unwrap().clone();
+        let name = self.clone_previous();
         self.consume(TokenType::OParen, "توقعت '(' قبل المعاملات", reporter)?;
         let params = self.params(reporter)?;
         self.consume(TokenType::CParen, "توقعت ')' بعد المعاملات", reporter)?;
@@ -436,15 +438,11 @@ impl<'a> Parser<'a> {
     }
 
     fn break_stml(&mut self) -> Result<Stml, ()> {
-        Ok(Stml::Break(Rc::new(
-            self.previous.as_ref().unwrap().clone(),
-        )))
+        Ok(Stml::Break(Rc::new(self.clone_previous())))
     }
 
     fn continue_stml(&mut self) -> Result<Stml, ()> {
-        Ok(Stml::Continue(Rc::new(
-            self.previous.as_ref().unwrap().clone(),
-        )))
+        Ok(Stml::Continue(Rc::new(self.clone_previous())))
     }
 
     fn try_catch(&mut self, reporter: &mut dyn Reporter) -> Result<Stml, ()> {
@@ -452,7 +450,7 @@ impl<'a> Parser<'a> {
         let body = self.block(reporter)?;
         self.consume(TokenType::Catch, "توقعت 'أمسك'", reporter)?;
         self.consume(TokenType::OParen, "توقعت '('", reporter)?;
-        let name = self.previous.as_ref().unwrap().clone();
+        let name = self.clone_previous();
         self.consume(
             TokenType::Identifier,
             "توقعت اسم المعامل الذي سيحمل الخطأ",
@@ -487,7 +485,7 @@ impl<'a> Parser<'a> {
 
     fn var_decl(&mut self, reporter: &mut dyn Reporter) -> Result<Stml, ()> {
         self.consume(TokenType::Identifier, "توقعت اسم المتغير", reporter)?;
-        let name = self.previous.as_ref().unwrap().clone();
+        let name = self.clone_previous();
         let initializer = if self.check(TokenType::Equal) {
             self.advance(reporter)?;
             Some(self.parse_expr(reporter)?)
@@ -530,6 +528,41 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn imported_decl(&mut self, reporter: &mut dyn Reporter) -> Result<Stml, ()> {
+        self.consume(TokenType::Identifier, "توقعت اسم المتغير", reporter)?;
+        let name = self.clone_previous();
+        self.consume(TokenType::From, "توقعت 'من'", reporter)?;
+        self.consume(TokenType::String, "توقعت مسار الملف المستورد", reporter)?;
+        Ok(Stml::Import(Rc::new(name), Rc::new(self.clone_previous())))
+    }
+
+    fn exported_decl(&mut self, reporter: &mut dyn Reporter) -> Result<Stml, ()> {
+        let token = self.clone_previous();
+
+        if self.check(TokenType::Function) {
+            self.advance(reporter)?;
+            Ok(Stml::Export(
+                Rc::new(token),
+                Box::new(self.function_decl(reporter)?),
+            ))
+        } else if self.check(TokenType::Var) {
+            self.advance(reporter)?;
+            Ok(Stml::Export(
+                Rc::new(token),
+                Box::new(self.var_decl(reporter)?),
+            ))
+        } else {
+            let token = self.current.clone();
+            self.error_at(
+                Phase::Parsing,
+                &token,
+                "يمكنك فقط تصدير الدوال والمتغيرات",
+                reporter,
+            );
+            Err(())
+        }
+    }
+
     fn decl(&mut self, reporter: &mut dyn Reporter) -> Result<Stml, ()> {
         if self.check(TokenType::Function) {
             self.advance(reporter)?;
@@ -537,6 +570,12 @@ impl<'a> Parser<'a> {
         } else if self.check(TokenType::Var) {
             self.advance(reporter)?;
             self.var_decl(reporter)
+        } else if self.check(TokenType::Export) {
+            self.advance(reporter)?;
+            self.exported_decl(reporter)
+        } else if self.check(TokenType::Import) {
+            self.advance(reporter)?;
+            self.imported_decl(reporter)
         } else {
             self.stml(reporter)
         }
