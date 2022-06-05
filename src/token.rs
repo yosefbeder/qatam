@@ -189,6 +189,17 @@ impl Token {
         }
     }
 
+    pub fn new_empty() -> Self {
+        Self {
+            typ: TokenType::Unknown,
+            source: Rc::new("".to_string()),
+            path: None,
+            lexeme: "".to_string(),
+            start: 0,
+            length: 0,
+        }
+    }
+
     fn get_pos(&self) -> (usize, usize) {
         let mut offset = 0;
         let mut line = 1;

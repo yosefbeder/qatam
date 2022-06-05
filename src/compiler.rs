@@ -1,17 +1,25 @@
 use super::{
     ast::{Expr, Literal, Stml},
     chunk::{Chunk, Instruction},
+    parser::Parser,
+    path::{get_dir, get_path},
     reporter::{Phase, Report, Reporter},
     token::{Token, TokenType},
+    tokenizer::Tokenizer,
     value::{Arity, Function, Value},
 };
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::{
+    cell::RefCell,
+    env, fs,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum CompilerType {
     Script,
     Function,
+    Module,
 }
 
 #[derive(Debug, Clone)]
@@ -19,12 +27,13 @@ struct Local {
     name: Rc<Token>,
     depth: u32,
     is_captured: bool,
+    is_exported: bool,
 }
 
 #[derive(Debug, Clone)]
-struct UpValue {
-    is_local: bool,
-    idx: usize,
+pub struct UpValue {
+    pub is_local: bool,
+    pub idx: usize,
 }
 
 impl UpValue {
@@ -39,7 +48,16 @@ impl Local {
             name,
             depth,
             is_captured: false,
+            is_exported: false,
         }
+    }
+
+    fn capture(&mut self) {
+        self.is_captured = true;
+    }
+
+    fn export(&mut self) {
+        self.is_exported = true;
     }
 }
 
@@ -111,7 +129,7 @@ impl CompilerState {
         let mut enclosing_state = self.enclosing_state.as_ref().unwrap().borrow_mut();
         match enclosing_state.resolve_local(Rc::clone(&token)) {
             Some(idx) => {
-                enclosing_state.locals.get_mut(idx).unwrap().is_captured = true;
+                enclosing_state.get_local_mut(idx).capture();
                 drop(enclosing_state);
                 return Some(self.append_up_value(true, idx));
             }
@@ -125,6 +143,26 @@ impl CompilerState {
             _ => None,
         }
     }
+
+    fn get_local(&self, idx: usize) -> &Local {
+        self.locals.get(idx).unwrap()
+    }
+
+    fn get_local_mut(&mut self, idx: usize) -> &mut Local {
+        self.locals.get_mut(idx).unwrap()
+    }
+
+    fn last_local_mut(&mut self) -> &mut Local {
+        self.locals.last_mut().unwrap()
+    }
+
+    fn last_loop(&self) -> &Loop {
+        self.loops.last().unwrap()
+    }
+
+    fn last_loop_mut(&mut self) -> &mut Loop {
+        self.loops.last_mut().unwrap()
+    }
 }
 
 pub struct Compiler<'b> {
@@ -134,17 +172,63 @@ pub struct Compiler<'b> {
     ast: &'b Vec<Stml>,
     chunk: Chunk,
     state: Rc<RefCell<CompilerState>>,
+    cwd: PathBuf,
 }
 
 impl<'b> Compiler<'b> {
     pub fn new(ast: &'b Vec<Stml>) -> Self {
+        let mut state = CompilerState::new(None);
+
+        state
+            .locals
+            .push(Local::new(Rc::new(Token::new_empty()), 0));
+
         Compiler {
             typ: CompilerType::Script,
             name: None,
             arity: 0,
             ast,
             chunk: Chunk::new(),
-            state: Rc::new(RefCell::new(CompilerState::new(None))),
+            state: Rc::new(RefCell::new(state)),
+            cwd: env::current_dir().unwrap(),
+        }
+    }
+
+    fn new_module(ast: &'b Vec<Stml>, cwd: &Path) -> Self {
+        let mut state = CompilerState::new(None);
+
+        state
+            .locals
+            .push(Local::new(Rc::new(Token::new_empty()), 0));
+
+        Compiler {
+            typ: CompilerType::Module,
+            name: None,
+            arity: 0,
+            ast,
+            chunk: Chunk::new(),
+            state: Rc::new(RefCell::new(state)),
+            cwd: cwd.to_owned(),
+        }
+    }
+
+    fn new_function(
+        name: Option<String>,
+        body: &'b Stml,
+        enclosing_state: Rc<RefCell<CompilerState>>,
+        cwd: &Path,
+    ) -> Self {
+        Compiler {
+            typ: CompilerType::Function,
+            name,
+            arity: 0,
+            ast: match body {
+                Stml::Block(stmls) => stmls,
+                _ => unreachable!(),
+            },
+            chunk: Chunk::new(),
+            state: Rc::new(RefCell::new(CompilerState::new(Some(enclosing_state)))),
+            cwd: cwd.to_owned(),
         }
     }
 
@@ -159,6 +243,43 @@ impl<'b> Compiler<'b> {
     //     reporter.warning(report);
     // }
 
+    fn string(&mut self, token: Rc<Token>, reporter: &mut dyn Reporter) -> Result<String, ()> {
+        let mut content = String::new();
+        let mut iter = token.lexeme.chars();
+
+        if let Some(c) = iter.next() {
+            if c != '"' {
+                content.push(c)
+            }
+        }
+
+        while let Some(c) = iter.next() {
+            if c == '\\' {
+                if let Some(c) = iter.next() {
+                    match c {
+                        'n' => content.push('\n'),
+                        'r' => content.push('\r'),
+                        't' => content.push('\t'),
+                        '\\' => content.push('\\'),
+                        '"' => content.push('"'),
+                        '\'' => content.push('\''),
+                        '0' => content.push('\0'),
+                        _ => {
+                            //TODO add a hint here
+                            self.error_at(Rc::clone(&token), "رمز غير متوقع بعد '\\'", reporter);
+                            return Err(());
+                        }
+                    }
+                }
+            } else if c == '"' {
+                break;
+            } else {
+                content.push(c);
+            }
+        }
+        Ok(content)
+    }
+
     fn in_global_scope(&self) -> bool {
         self.typ == CompilerType::Script && self.state.borrow().scope_depth == 0
     }
@@ -167,22 +288,9 @@ impl<'b> Compiler<'b> {
         self.typ == CompilerType::Function
     }
 
-    fn new_function(
-        name: Option<String>,
-        body: &'b Stml,
-        enclosing_state: Rc<RefCell<CompilerState>>,
-    ) -> Self {
-        Compiler {
-            typ: CompilerType::Function,
-            name,
-            arity: 0,
-            ast: match body {
-                Stml::Block(stmls) => stmls,
-                _ => unreachable!(),
-            },
-            chunk: Chunk::new(),
-            state: Rc::new(RefCell::new(CompilerState::new(Some(enclosing_state)))),
-        }
+    /// for both imports and exports
+    fn can_import(&self) -> bool {
+        self.typ != CompilerType::Function && self.state.borrow().scope_depth == 0
     }
 
     fn define_variable(&mut self, token: Rc<Token>, reporter: &mut dyn Reporter) -> Result<(), ()> {
@@ -308,46 +416,7 @@ impl<'b> Compiler<'b> {
                 )?;
             }
             Literal::String(token) => {
-                let mut content = String::new();
-                let mut iter = token.lexeme.chars();
-
-                if let Some(c) = iter.next() {
-                    if c != '"' {
-                        content.push(c)
-                    }
-                }
-
-                while let Some(c) = iter.next() {
-                    if c == '\\' {
-                        if let Some(c) = iter.next() {
-                            match c {
-                                'n' => content.push('\n'),
-                                'r' => content.push('\r'),
-                                't' => content.push('\t'),
-                                '\\' => content.push('\\'),
-                                '"' => content.push('"'),
-                                '\'' => content.push('\''),
-                                '0' => content.push('\0'),
-                                _ => {
-                                    //TODO add a hint here
-                                    self.error_at(
-                                        Rc::clone(&token),
-                                        "رمز غير متوقع بعد '\\'",
-                                        reporter,
-                                    );
-                                    return Err(());
-                                }
-                            }
-                        }
-                    } else if c == '"' {
-                        break;
-                    } else {
-                        content.push(c);
-                    }
-                }
-
-                let value = Value::String(content);
-
+                let value = Value::String(self.string(Rc::clone(token), reporter)?);
                 self.chunk.emit_const(value, Some(Rc::clone(token)))?;
             }
             Literal::Nil(token) => {
@@ -593,27 +662,22 @@ impl<'b> Compiler<'b> {
         body: &Stml,
         reporter: &mut dyn Reporter,
     ) -> Result<(), ()> {
-        let mut function_compiler =
-            Compiler::new_function(Some(name.lexeme.clone()), body, Rc::clone(&self.state));
-        function_compiler.define_variable(Rc::clone(&name), reporter)?;
-        function_compiler.define_params(params, reporter)?;
-        self.chunk.emit_const(
-            Value::Function(Rc::new(function_compiler.compile(reporter)?)),
-            Some(Rc::clone(&name)),
+        let mut compiler = Compiler::new_function(
+            Some(name.lexeme.clone()),
+            body,
+            Rc::clone(&self.state),
+            &self.cwd,
+        );
+        compiler.define_variable(Rc::clone(&name), reporter)?;
+        compiler.define_params(params, reporter)?;
+        self.chunk.emit_closure(
+            compiler.compile(reporter)?,
+            &compiler.state.borrow().up_values,
+            Rc::clone(&name),
         )?;
-        //TODO consider not appending regular functions as closures optimization
-        let up_values = &function_compiler.state.borrow().up_values;
-        self.chunk
-            .emit_instr(Instruction::Closure, Some(Rc::clone(&name)));
-        self.chunk.emit_byte(up_values.len() as u8); //TODO make sure this it's convertable to u8
-        for up_value in up_values {
-            self.chunk.emit_byte(up_value.is_local as u8);
-            self.chunk.emit_byte(up_value.idx as u8);
-        }
         self.define_variable(Rc::clone(&name), reporter)?;
         Ok(())
     }
-
     fn var_decl(
         &mut self,
         name: Rc<Token>,
@@ -750,13 +814,7 @@ impl<'b> Compiler<'b> {
         }
 
         let idx = self.chunk.emit_jump(Instruction::Jump, Some(token));
-        self.state
-            .borrow_mut()
-            .loops
-            .last_mut()
-            .unwrap()
-            .breaks
-            .push(idx);
+        self.state.borrow_mut().last_loop_mut().breaks.push(idx);
         Ok(())
     }
 
@@ -766,8 +824,70 @@ impl<'b> Compiler<'b> {
             return Err(());
         }
 
-        let start = self.state.borrow().loops.last().unwrap().start;
+        let start = self.state.borrow().last_loop().start;
         self.chunk.emit_loop(start, None);
+        Ok(())
+    }
+
+    fn import_stml(
+        &mut self,
+        name: Rc<Token>,
+        path: Rc<Token>,
+        reporter: &mut dyn Reporter,
+    ) -> Result<(), ()> {
+        if !self.can_import() {
+            self.error_at(name, "لا يمكنك الاستيراد في هذا السياق", reporter);
+            return Err(());
+        }
+
+        let path = self.string(path, reporter)?;
+        let path = get_path(&self.cwd, &path).or_else(|err| {
+            self.error_at(Rc::clone(&name), &err, reporter);
+            return Err(());
+        })?;
+        let source = fs::read_to_string(&path).unwrap();
+        let mut tokenizer = Tokenizer::new(source, Some(&path));
+        let mut parser = Parser::new(&mut tokenizer);
+        let ast = parser.parse(reporter)?;
+        let mut compiler = Compiler::new_module(&ast, &get_dir(&path));
+        self.chunk.emit_closure(
+            compiler.compile(reporter)?,
+            &compiler.state.borrow().up_values,
+            Rc::clone(&name),
+        )?;
+        self.chunk
+            .emit_instr(Instruction::Call, Some(Rc::clone(&name)));
+        self.chunk.emit_byte(0u8);
+        self.define_variable(name, reporter)
+    }
+
+    pub fn export_stml(
+        &mut self,
+        token: Rc<Token>,
+        stml: &Stml,
+        reporter: &mut dyn Reporter,
+    ) -> Result<(), ()> {
+        if !self.can_import() {
+            self.error_at(token, "لا يمكنك التصدير في هذا السياق", reporter);
+            return Err(());
+        }
+
+        match stml {
+            Stml::FunctionDecl(name, params, body) => {
+                match self.function_decl(Rc::clone(name), params, body, reporter) {
+                    Ok(_) => {}
+                    Err(_) => {
+                        self.state.borrow_mut().had_error = true;
+                        return Err(());
+                    }
+                }
+            }
+            Stml::VarDecl(name, initializer) => {
+                self.var_decl(Rc::clone(name), initializer, reporter)?;
+            }
+            _ => unreachable!(),
+        };
+        self.state.borrow_mut().last_local_mut().export();
         Ok(())
     }
 
@@ -805,8 +925,10 @@ impl<'b> Compiler<'b> {
             Stml::Loop(body) => self.loop_stml(body, reporter)?,
             Stml::Break(token) => self.break_stml(Rc::clone(token), reporter)?,
             Stml::Continue(token) => self.continue_stml(Rc::clone(token), reporter)?,
-            Stml::Import(_, _) => todo!(),
-            Stml::Export(_, _) => todo!(),
+            Stml::Import(name, path) => {
+                self.import_stml(Rc::clone(name), Rc::clone(path), reporter)?
+            }
+            Stml::Export(token, stml) => self.export_stml(Rc::clone(token), stml, reporter)?,
             Stml::TryCatch(_, _, _) => unimplemented!(),
         }
         Ok(())
@@ -823,9 +945,31 @@ impl<'b> Compiler<'b> {
             self.stml(stml, reporter).ok();
         }
 
-        if self.typ == CompilerType::Function {
-            self.chunk.emit_const(Value::Nil, None)?;
-            self.chunk.emit_instr(Instruction::Return, None);
+        match self.typ {
+            CompilerType::Function => {
+                self.chunk.emit_const(Value::Nil, None)?;
+                self.chunk.emit_instr(Instruction::Return, None);
+            }
+            CompilerType::Module => {
+                let state = &self.state.borrow();
+                let mut sum = 0;
+
+                for idx in 1..state.locals.len() {
+                    let local = state.get_local(idx);
+                    if local.is_exported {
+                        self.chunk
+                            .emit_const(Value::String(local.name.lexeme.clone()), None)?;
+                        self.chunk.emit_instr(Instruction::GetLocal, None);
+                        self.chunk.emit_byte(idx as u8);
+                        sum += 1;
+                    }
+                }
+
+                self.chunk.emit_instr(Instruction::BuildObject, None);
+                self.chunk.emit_byte(sum as u8);
+                self.chunk.emit_instr(Instruction::Return, None);
+            }
+            _ => {}
         }
 
         if self.state.borrow().had_error {

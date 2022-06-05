@@ -10,7 +10,7 @@ use super::{
 use std::{
     cell::RefCell,
     collections::HashMap,
-    fmt,
+    env, fmt,
     fs::File,
     path::{Path, PathBuf},
     rc::Rc,
@@ -55,7 +55,7 @@ pub struct Vm {
     globals: HashMap<String, Value>,
     open_up_values: Vec<Rc<RefCell<UpValue>>>,
     pub created_at: SystemTime,
-    pub working_dir: PathBuf,
+    pub cwd: PathBuf,
 }
 
 impl Vm {
@@ -66,7 +66,7 @@ impl Vm {
             globals: HashMap::new(),
             open_up_values: Vec::new(),
             created_at: SystemTime::now(),
-            working_dir: Path::new(".").canonicalize().unwrap(),
+            cwd: env::current_dir().unwrap(),
         };
 
         for (key, native) in natives::NATIVES.iter() {
@@ -177,7 +177,7 @@ impl Vm {
             if path.is_absolute() {
                 Ok(path.to_path_buf())
             } else {
-                Ok(self.working_dir.join(path))
+                Ok(self.cwd.join(path))
             }
         } else {
             Err(format!("يجب أن يكون المدخل {idx} مسار"))

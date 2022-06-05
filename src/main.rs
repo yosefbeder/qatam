@@ -4,6 +4,7 @@ mod compiler;
 mod natives;
 mod operators;
 mod parser;
+mod path;
 mod reporter;
 mod token;
 mod tokenizer;
@@ -13,15 +14,10 @@ mod vm;
 
 use compiler::Compiler;
 use parser::Parser;
+use path::{get_dir, get_path};
 use reporter::{CliReporter, Reporter};
 use rustyline::{error::ReadlineError, Editor};
-use std::{
-    env,
-    ffi::OsStr,
-    fs,
-    path::{Path, PathBuf},
-    process,
-};
+use std::{env, fs, path::Path, process};
 use tokenizer::Tokenizer;
 use value::Function;
 use vm::Vm;
@@ -83,35 +79,15 @@ fn run_line(line: String, vm: &mut Vm, reporter: &mut dyn Reporter) -> Result<()
 }
 
 fn run_file(arg: &str, vm: &mut Vm, reporter: &mut dyn Reporter) -> Result<(), ()> {
-    let path = generate_path(arg)?;
-    if let Some(dir) = path.parent() {
-        vm.working_dir = dir.to_owned();
-    }
+    let path = get_path(&vm.cwd, arg).or_else(|err| {
+        eprintln!("{err}");
+        return Err(());
+    })?;
+    vm.cwd = get_dir(&path);
     let source = fs::read_to_string(&path).unwrap();
     let script = compile(source, Some(&path), reporter)?;
     vm.call_function(script).unwrap();
     vm.run(reporter)
-}
-
-/// returns the absolute path of the file if it exists.
-fn generate_path(arg: &str) -> Result<PathBuf, ()> {
-    let path = PathBuf::from(arg);
-
-    if !path.is_file() {
-        eprintln!("الملف غير موجود");
-        return Err(());
-    }
-
-    if path.extension() != Some(OsStr::new("قتام")) {
-        eprintln!("يجب أن يكون إمتداد الملف \"قتام\"");
-        return Err(());
-    }
-
-    if path.is_absolute() {
-        Ok(path)
-    } else {
-        Ok(path.canonicalize().unwrap())
-    }
 }
 
 fn compile(

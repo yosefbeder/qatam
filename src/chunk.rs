@@ -1,7 +1,8 @@
 use super::{
+    compiler::UpValue,
     token::Token,
     utils::{combine, split},
-    value::Value,
+    value::{Function, Value},
 };
 use std::{
     convert::{Into, TryFrom},
@@ -377,6 +378,23 @@ impl Chunk {
         self.emit_instr(instr, token);
         self.emit_bytes(0);
         idx
+    }
+
+    pub fn emit_closure(
+        &mut self,
+        function: Function,
+        up_values: &[UpValue],
+        token: Rc<Token>,
+    ) -> Result<(), ()> {
+        self.emit_const(Value::Function(Rc::new(function)), Some(Rc::clone(&token)))?;
+        //TODO consider not appending regular functions as closures optimization
+        self.emit_instr(Instruction::Closure, Some(token));
+        self.emit_byte(up_values.len() as u8); //TODO make sure this it's convertable to u8
+        for up_value in up_values {
+            self.emit_byte(up_value.is_local as u8);
+            self.emit_byte(up_value.idx as u8);
+        }
+        Ok(())
     }
 
     //TODO have another look at usize -> u16 conversions
