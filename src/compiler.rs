@@ -849,7 +849,9 @@ impl<'b> Compiler<'b> {
         let mut tokenizer = Tokenizer::new(source, Some(&path));
         let mut parser = Parser::new(&mut tokenizer);
         let ast = parser.parse(reporter)?;
-        let mut compiler = Compiler::new_module(&ast, &get_dir(&path));
+        let cwd = get_dir(&path);
+        self.chunk.emit_set_cwd(&cwd)?;
+        let mut compiler = Compiler::new_module(&ast, &cwd);
         self.chunk.emit_closure(
             compiler.compile(reporter)?,
             &compiler.state.borrow().up_values,
@@ -858,6 +860,7 @@ impl<'b> Compiler<'b> {
         self.chunk
             .emit_instr(Instruction::Call, Some(Rc::clone(&name)));
         self.chunk.emit_byte(0u8);
+        self.chunk.emit_set_cwd(&self.cwd)?;
         self.define_variable(name, reporter)
     }
 

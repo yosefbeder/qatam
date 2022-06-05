@@ -7,6 +7,7 @@ use super::{
 use std::{
     convert::{Into, TryFrom},
     fmt,
+    path::Path,
     rc::Rc,
 };
 
@@ -46,6 +47,7 @@ pub enum Instruction {
     Set,
     BuildList,
     BuildObject,
+    SetCwd,
 }
 
 impl Into<u8> for Instruction {
@@ -85,6 +87,7 @@ impl Into<u8> for Instruction {
             Instruction::Set => 31,
             Instruction::BuildList => 32,
             Instruction::BuildObject => 33,
+            Instruction::SetCwd => 34,
         }
     }
 }
@@ -128,6 +131,7 @@ impl TryFrom<u8> for Instruction {
             31 => Ok(Instruction::Set),
             32 => Ok(Instruction::BuildList),
             33 => Ok(Instruction::BuildObject),
+            34 => Ok(Instruction::SetCwd),
             _ => Err(()),
         }
     }
@@ -170,6 +174,7 @@ impl fmt::Debug for Instruction {
             Self::Set => "SET",
             Self::BuildList => "BUILD_LIST",
             Self::BuildObject => "BUILD_OBJECT",
+            Self::SetCwd => "SET_CWD",
         };
 
         if let Some(width) = f.width() {
@@ -236,7 +241,8 @@ impl Chunk {
             | Instruction::DefineGlobal
             | Instruction::Get
             | Instruction::Set
-            | Instruction::CloseUpValue => {
+            | Instruction::CloseUpValue
+            | Instruction::SetCwd => {
                 buffer += "\n";
                 return (buffer, 1);
             }
@@ -394,6 +400,15 @@ impl Chunk {
             self.emit_byte(up_value.is_local as u8);
             self.emit_byte(up_value.idx as u8);
         }
+        Ok(())
+    }
+
+    pub fn emit_set_cwd(&mut self, cwd: &Path) -> Result<(), ()> {
+        self.emit_const(
+            Value::String(cwd.to_owned().into_os_string().into_string().unwrap()),
+            None,
+        )?;
+        self.emit_instr(Instruction::SetCwd, None);
         Ok(())
     }
 

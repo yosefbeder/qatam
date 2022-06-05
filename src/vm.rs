@@ -816,6 +816,10 @@ impl Vm {
                 self.close_up_values(idx);
                 self.pop();
             }
+            Instruction::SetCwd => {
+                let path = self.pop().to_string();
+                self.cwd = PathBuf::from(&path);
+            }
         };
         Ok(1)
     }
