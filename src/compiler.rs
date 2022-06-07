@@ -2,18 +2,13 @@ use super::{
     ast::{Expr, Literal, Stml},
     chunk::{Chunk, Instruction},
     parser::Parser,
-    path::{get_dir, get_path},
+    path::{qatam_path, resolve_path},
     reporter::{Phase, Report, Reporter},
     token::{Token, TokenType},
     tokenizer::Tokenizer,
     value::{Arity, Function, Value},
 };
-use std::{
-    cell::RefCell,
-    env, fs,
-    path::{Path, PathBuf},
-    rc::Rc,
-};
+use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum CompilerType {
@@ -172,11 +167,11 @@ pub struct Compiler<'b> {
     ast: &'b Vec<Stml>,
     chunk: Chunk,
     state: Rc<RefCell<CompilerState>>,
-    cwd: PathBuf,
+    path: Option<PathBuf>,
 }
 
 impl<'b> Compiler<'b> {
-    pub fn new(ast: &'b Vec<Stml>) -> Self {
+    pub fn new(ast: &'b Vec<Stml>, path: Option<PathBuf>) -> Self {
         let mut state = CompilerState::new(None);
 
         state
@@ -190,11 +185,11 @@ impl<'b> Compiler<'b> {
             ast,
             chunk: Chunk::new(),
             state: Rc::new(RefCell::new(state)),
-            cwd: env::current_dir().unwrap(),
+            path,
         }
     }
 
-    fn new_module(ast: &'b Vec<Stml>, cwd: &Path) -> Self {
+    fn new_module(ast: &'b Vec<Stml>, path: PathBuf) -> Self {
         let mut state = CompilerState::new(None);
 
         state
@@ -208,7 +203,7 @@ impl<'b> Compiler<'b> {
             ast,
             chunk: Chunk::new(),
             state: Rc::new(RefCell::new(state)),
-            cwd: cwd.to_owned(),
+            path: Some(path),
         }
     }
 
@@ -216,7 +211,7 @@ impl<'b> Compiler<'b> {
         name: Option<String>,
         body: &'b Stml,
         enclosing_state: Rc<RefCell<CompilerState>>,
-        cwd: &Path,
+        path: Option<PathBuf>,
     ) -> Self {
         Compiler {
             typ: CompilerType::Function,
@@ -228,7 +223,7 @@ impl<'b> Compiler<'b> {
             },
             chunk: Chunk::new(),
             state: Rc::new(RefCell::new(CompilerState::new(Some(enclosing_state)))),
-            cwd: cwd.to_owned(),
+            path,
         }
     }
 
@@ -666,7 +661,7 @@ impl<'b> Compiler<'b> {
             Some(name.lexeme.clone()),
             body,
             Rc::clone(&self.state),
-            &self.cwd,
+            self.path.clone(),
         );
         compiler.define_variable(Rc::clone(&name), reporter)?;
         compiler.define_params(params, reporter)?;
@@ -836,22 +831,25 @@ impl<'b> Compiler<'b> {
         reporter: &mut dyn Reporter,
     ) -> Result<(), ()> {
         if !self.can_import() {
-            self.error_at(name, "لا يمكنك الاستيراد في هذا السياق", reporter);
+            self.error_at(name, "لا يمكنك الاستيراد في هذا السياق", reporter); //TODO clarify
             return Err(());
         }
 
-        let path = self.string(path, reporter)?;
-        let path = get_path(&self.cwd, &path).or_else(|err| {
-            self.error_at(Rc::clone(&name), &err, reporter);
-            return Err(());
-        })?;
+        let as_string = self.string(Rc::clone(&path), reporter)?;
+
+        let path = match resolve_path(self.path.clone(), &as_string, qatam_path) {
+            Ok(path) => path,
+            Err(err) => {
+                self.error_at(path, &err, reporter);
+                return Err(());
+            }
+        };
+
         let source = fs::read_to_string(&path).unwrap();
-        let mut tokenizer = Tokenizer::new(source, Some(&path));
+        let mut tokenizer = Tokenizer::new(source, Some(path.clone()));
         let mut parser = Parser::new(&mut tokenizer);
         let ast = parser.parse(reporter)?;
-        let cwd = get_dir(&path);
-        self.chunk.emit_set_cwd(&cwd)?;
-        let mut compiler = Compiler::new_module(&ast, &cwd);
+        let mut compiler = Compiler::new_module(&ast, path);
         self.chunk.emit_closure(
             compiler.compile(reporter)?,
             &compiler.state.borrow().up_values,
@@ -860,7 +858,6 @@ impl<'b> Compiler<'b> {
         self.chunk
             .emit_instr(Instruction::Call, Some(Rc::clone(&name)));
         self.chunk.emit_byte(0u8);
-        self.chunk.emit_set_cwd(&self.cwd)?;
         self.define_variable(name, reporter)
     }
 
@@ -982,6 +979,7 @@ impl<'b> Compiler<'b> {
                 self.name.clone(),
                 self.chunk.clone(),
                 Arity::Fixed(self.arity),
+                self.path.clone(),
             ))
         }
     }

@@ -14,10 +14,10 @@ mod vm;
 
 use compiler::Compiler;
 use parser::Parser;
-use path::{get_dir, get_path};
+use path::{qatam_path, resolve_path};
 use reporter::{CliReporter, Reporter};
 use rustyline::{error::ReadlineError, Editor};
-use std::{env, fs, path::Path, process};
+use std::{env, fs, path::PathBuf, process};
 use tokenizer::Tokenizer;
 use value::Function;
 use vm::Vm;
@@ -79,23 +79,19 @@ fn run_line(line: String, vm: &mut Vm, reporter: &mut dyn Reporter) -> Result<()
 }
 
 fn run_file(arg: &str, vm: &mut Vm, reporter: &mut dyn Reporter) -> Result<(), ()> {
-    let path = get_path(&vm.cwd, arg).or_else(|err| {
-        eprintln!("{err}");
-        return Err(());
-    })?;
-    vm.cwd = get_dir(&path);
+    let path = resolve_path(None, arg, qatam_path).map_err(|err| eprintln!("{err}"))?;
     let source = fs::read_to_string(&path).unwrap();
-    let script = compile(source, Some(&path), reporter)?;
+    let script = compile(source, Some(path), reporter)?;
     vm.call_function(script).unwrap();
     vm.run(reporter)
 }
 
 fn compile(
     source: String,
-    path: Option<&Path>,
+    path: Option<PathBuf>,
     reporter: &mut dyn Reporter,
 ) -> Result<Function, ()> {
-    let mut tokenizer = Tokenizer::new(source, path);
+    let mut tokenizer = Tokenizer::new(source, path.clone());
     let mut parser = Parser::new(&mut tokenizer);
     let ast = parser.parse(reporter)?;
     if cfg!(feature = "debug-ast") {
@@ -103,7 +99,7 @@ fn compile(
             print!("{:?}", stml);
         }
     }
-    let mut compiler = Compiler::new(&ast);
+    let mut compiler = Compiler::new(&ast, path);
     let script = compiler.compile(reporter)?;
     if cfg!(feature = "debug-bytecode") {
         print!("{:?}", script);

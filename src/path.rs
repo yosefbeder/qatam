@@ -1,31 +1,48 @@
+use path_absolutize::*;
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
 };
 
-/// note: not tested for linux
-pub fn get_path(cwd: &Path, arg: &str) -> Result<PathBuf, String> {
-    let mut path = PathBuf::from(arg);
-
-    if path.extension() != Some(OsStr::new("قتام")) {
-        return Err("يجب أن يكون إمتداد الملف \"قتام\"".to_string());
+pub fn qatam_path(path: &Path) -> Result<(), String> {
+    if path.extension() == Some(OsStr::new("قتام")) {
+        return Ok(());
     }
-
-    if !path.is_absolute() {
-        path = match cwd.join(&path).canonicalize() {
-            Ok(path) => path,
-            Err(_) => return Err("الملف غير موجود".to_string()),
-        };
-    } else {
-        if !path.is_file() {
-            return Err("الملف غير موجود".to_string());
-        }
-    }
-
-    Ok(path)
+    Err("يجب أن يكون امتداد الملف \"قتام\"".to_string())
 }
 
-/// note: this functions is intenteded to work with the path returned from the one above
-pub fn get_dir(path: &Path) -> PathBuf {
-    path.parent().unwrap().to_owned()
+/// note: the path is expected to be absolute
+fn get_dir(path: &Path) -> PathBuf {
+    match path.parent() {
+        Some(dir) => dir.to_owned(),
+        None => PathBuf::from("/"), // only for linux
+    }
+}
+
+/// note: cur_file must be absolute
+pub fn resolve_path(
+    cur_file: Option<PathBuf>,
+    path: &str,
+    pred: fn(&Path) -> Result<(), String>,
+) -> Result<PathBuf, String> {
+    let mut path = PathBuf::from(path);
+
+    if path.is_relative() {
+        match cur_file {
+            Some(cur_file) => {
+                path = (*get_dir(&cur_file).join(path).absolutize().unwrap()).to_owned();
+            }
+            None => {
+                path = (*path.absolutize().unwrap()).to_owned();
+            }
+        };
+    }
+
+    if !path.is_file() {
+        return Err("لا يوجد ملف بهذا المسار".to_string());
+    }
+
+    pred(&path)?;
+
+    Ok(path)
 }

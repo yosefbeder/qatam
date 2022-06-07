@@ -2,19 +2,14 @@
 use super::{
     chunk::{Chunk, Instruction},
     natives,
+    path::resolve_path,
     reporter::{Phase, Report, Reporter},
     token::Token,
     utils::combine,
     value::{Arity, Closure, Function, UpValue, Value},
 };
 use std::{
-    cell::RefCell,
-    collections::HashMap,
-    env, fmt,
-    fs::File,
-    path::{Path, PathBuf},
-    rc::Rc,
-    time::SystemTime,
+    cell::RefCell, collections::HashMap, fmt, fs::File, path::PathBuf, rc::Rc, time::SystemTime,
 };
 
 pub struct Frame {
@@ -55,7 +50,6 @@ pub struct Vm {
     globals: HashMap<String, Value>,
     open_up_values: Vec<Rc<RefCell<UpValue>>>,
     pub created_at: SystemTime,
-    pub cwd: PathBuf,
 }
 
 impl Vm {
@@ -66,7 +60,6 @@ impl Vm {
             globals: HashMap::new(),
             open_up_values: Vec::new(),
             created_at: SystemTime::now(),
-            cwd: env::current_dir().unwrap(),
         };
 
         for (key, native) in natives::NATIVES.iter() {
@@ -173,12 +166,11 @@ impl Vm {
 
     pub fn get_path(&self, idx: usize, argc: usize) -> Result<PathBuf, String> {
         if let Value::String(string) = self.get_any(idx, argc) {
-            let path = Path::new(&string);
-            if path.is_absolute() {
-                Ok(path.to_path_buf())
-            } else {
-                Ok(self.cwd.join(path))
-            }
+            resolve_path(
+                self.last_frame().closure.function.path.clone(),
+                &string,
+                |_| Ok(()),
+            )
         } else {
             Err(format!("يجب أن يكون المدخل {idx} مسار"))
         }
@@ -815,10 +807,6 @@ impl Vm {
                 let idx = self.stack.len() - 1;
                 self.close_up_values(idx);
                 self.pop();
-            }
-            Instruction::SetCwd => {
-                let path = self.pop().to_string();
-                self.cwd = PathBuf::from(&path);
             }
         };
         Ok(1)

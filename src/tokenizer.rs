@@ -1,8 +1,5 @@
 use super::token::{Token, TokenType};
-use std::{
-    path::{Path, PathBuf},
-    rc::Rc,
-};
+use std::{path::PathBuf, rc::Rc};
 
 pub struct Tokenizer {
     source: Rc<String>,
@@ -12,13 +9,10 @@ pub struct Tokenizer {
 }
 
 impl Tokenizer {
-    pub fn new(source: String, path: Option<&Path>) -> Self {
+    pub fn new(source: String, path: Option<PathBuf>) -> Self {
         Self {
             source: Rc::new(source),
-            path: match path {
-                Some(path) => Some(path.to_owned()),
-                None => None,
-            },
+            path,
             start: 0,
             current: 0,
         }

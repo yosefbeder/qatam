@@ -1,5 +1,8 @@
 use super::{chunk::Chunk, vm::Vm};
-use std::{cell::RefCell, cmp, collections::HashMap, convert::TryInto, fmt, fs::File, ops, rc::Rc};
+use std::{
+    cell::RefCell, cmp, collections::HashMap, convert::TryInto, fmt, fs::File, ops, path::PathBuf,
+    rc::Rc,
+};
 
 #[derive(Clone, Copy)]
 pub enum Arity {
@@ -11,6 +14,7 @@ pub struct Function {
     name: Option<String>,
     pub chunk: Chunk,
     pub arity: Arity,
+    pub path: Option<PathBuf>,
 }
 
 impl fmt::Debug for Function {
@@ -40,8 +44,16 @@ impl fmt::Display for Function {
 }
 
 impl Function {
-    pub fn new(name: Option<String>, chunk: Chunk, arity: Arity) -> Self {
-        Self { name, chunk, arity }
+    pub fn new(name: Option<String>, chunk: Chunk, arity: Arity, path: Option<PathBuf>) -> Self {
+        Self {
+            name,
+            chunk,
+            arity,
+            path: match path {
+                Some(path) => Some(path.to_owned()),
+                None => None,
+            },
+        }
     }
 }
 
