@@ -926,7 +926,13 @@ impl<'b> Compiler<'b> {
             Stml::Break(token) => self.break_stml(Rc::clone(token), reporter)?,
             Stml::Continue(token) => self.continue_stml(Rc::clone(token), reporter)?,
             Stml::Import(name, path) => {
-                self.import_stml(Rc::clone(name), Rc::clone(path), reporter)?
+                match self.import_stml(Rc::clone(name), Rc::clone(path), reporter) {
+                    Ok(_) => {}
+                    Err(_) => {
+                        self.error_at(Rc::clone(name), "حدث خطأ اثناء الاستيراد", reporter);
+                        return Err(());
+                    }
+                }
             }
             Stml::Export(token, stml) => self.export_stml(Rc::clone(token), stml, reporter)?,
             Stml::TryCatch(_, _, _) => unimplemented!(),
