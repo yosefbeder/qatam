@@ -6,7 +6,7 @@ pub enum Phase {
     Tokenizing,
     Parsing,
     Compilation,
-    Runtime,
+    _Runtime,
 }
 
 impl fmt::Display for Phase {
@@ -15,7 +15,7 @@ impl fmt::Display for Phase {
             Phase::Tokenizing => write!(f, "مسحي"),
             Phase::Parsing => write!(f, "تحليلي"),
             Phase::Compilation => write!(f, "ترجمي"),
-            Phase::Runtime => write!(f, "تنفيذي"),
+            Phase::_Runtime => write!(f, "تنفيذي"),
         }
     }
 }

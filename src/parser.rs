@@ -1,24 +1,28 @@
-use super::ast::{Expr, Literal, Stml};
-use super::operators::{Associativity, OPERATORS};
-use super::reporter::{Phase, Report, Reporter};
-use super::token::{Token, TokenType, BOUNDARIES};
-use super::tokenizer::Tokenizer;
-use std::rc::Rc;
+use super::{
+    ast::{Expr, Literal, Stml},
+    operators::{Associativity, OPERATORS},
+    reporter::{Phase, Report, Reporter},
+    token::{Token, TokenType, BOUNDARIES},
+    tokenizer::Tokenizer,
+};
+use std::{path::PathBuf, rc::Rc};
 
-pub struct Parser<'a> {
+pub struct Parser {
+    tokenizer: Tokenizer,
     current: Token,
     previous: Option<Token>,
-    tokenizer: &'a mut Tokenizer,
-
     had_error: bool,
 }
 
-impl<'a> Parser<'a> {
-    pub fn new(tokenizer: &'a mut Tokenizer) -> Self {
+impl Parser {
+    pub fn new(source: String, path: Option<PathBuf>) -> Self {
+        let mut tokenizer = Tokenizer::new(source, path);
+        let current = tokenizer.next_token();
+
         Self {
-            current: tokenizer.next_token(),
-            previous: None,
             tokenizer,
+            current,
+            previous: None,
             had_error: false,
         }
     }

@@ -16,9 +16,8 @@ use compiler::Compiler;
 use parser::Parser;
 use path::{qatam_path, resolve_path};
 use reporter::{CliReporter, Reporter};
-use rustyline::{error::ReadlineError, Editor};
+use rustyline::Editor;
 use std::{env, fs, path::PathBuf, process};
-use tokenizer::Tokenizer;
 use value::Function;
 use vm::Vm;
 
@@ -59,12 +58,6 @@ fn run_repl(vm: &mut Vm, reporter: &mut dyn Reporter) {
                 rl.add_history_entry(&line);
                 run_line(line, vm, reporter).ok();
             }
-            Err(ReadlineError::Interrupted) => {
-                break;
-            }
-            Err(ReadlineError::Eof) => {
-                break;
-            }
             Err(_) => {
                 break;
             }
@@ -73,17 +66,13 @@ fn run_repl(vm: &mut Vm, reporter: &mut dyn Reporter) {
 }
 
 fn run_line(line: String, vm: &mut Vm, reporter: &mut dyn Reporter) -> Result<(), ()> {
-    let line = compile(line, None, reporter)?;
-    vm.call_function(line).unwrap();
-    vm.run(reporter)
+    vm.run(compile(line, None, reporter)?, reporter)
 }
 
 fn run_file(arg: &str, vm: &mut Vm, reporter: &mut dyn Reporter) -> Result<(), ()> {
     let path = resolve_path(None, arg, qatam_path).map_err(|err| eprintln!("{err}"))?;
     let source = fs::read_to_string(&path).unwrap();
-    let script = compile(source, Some(path), reporter)?;
-    vm.call_function(script).unwrap();
-    vm.run(reporter)
+    vm.run(compile(source, Some(path), reporter)?, reporter)
 }
 
 fn compile(
@@ -91,8 +80,7 @@ fn compile(
     path: Option<PathBuf>,
     reporter: &mut dyn Reporter,
 ) -> Result<Function, ()> {
-    let mut tokenizer = Tokenizer::new(source, path.clone());
-    let mut parser = Parser::new(&mut tokenizer);
+    let mut parser = Parser::new(source, path.clone());
     let ast = parser.parse(reporter)?;
     if cfg!(feature = "debug-ast") {
         for stml in &ast {

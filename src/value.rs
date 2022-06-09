@@ -1,6 +1,6 @@
-use super::{chunk::Chunk, vm::Vm};
+use super::{chunk::Chunk, vm::Frame};
 use std::{
-    cell::RefCell, cmp, collections::HashMap, convert::TryInto, fmt, fs::File, ops, path::PathBuf,
+    cell::RefCell, cmp, collections::HashMap, convert::From, fmt, fs::File, ops, path::PathBuf,
     rc::Rc,
 };
 
@@ -12,9 +12,9 @@ pub enum Arity {
 
 pub struct Function {
     name: Option<String>,
-    pub chunk: Chunk,
-    pub arity: Arity,
-    pub path: Option<PathBuf>,
+    chunk: Chunk,
+    arity: Arity,
+    path: Option<PathBuf>,
 }
 
 impl fmt::Debug for Function {
@@ -88,8 +88,8 @@ impl UpValue {
 }
 
 pub struct Closure {
-    pub function: Rc<Function>,
-    pub up_values: Vec<Rc<RefCell<UpValue>>>,
+    function: Rc<Function>,
+    up_values: Vec<Rc<RefCell<UpValue>>>,
 }
 
 impl Closure {
@@ -99,16 +99,33 @@ impl Closure {
             up_values,
         }
     }
+
+    pub fn get_chunk(&self) -> &Chunk {
+        &self.function.chunk
+    }
+
+    pub fn get_arity(&self) -> Arity {
+        self.function.arity
+    }
+
+    pub fn get_path(&self) -> &Option<PathBuf> {
+        &self.function.path
+    }
+
+    pub fn get_up_values(&self) -> &Vec<Rc<RefCell<UpValue>>> {
+        &self.up_values
+    }
+
+    pub fn get_up_value(&self, idx: usize) -> Rc<RefCell<UpValue>> {
+        self.up_values.get(idx).unwrap().clone()
+    }
 }
 
-pub type Native = fn(&Vm, usize) -> Result<Value, String>;
+pub type Native = fn(&Frame, usize) -> Result<Value, Value>;
 
 #[derive(Clone)]
-pub enum Value {
-    Number(f64),
+pub enum Object {
     String(String),
-    Bool(bool),
-    Nil,
     List(Rc<RefCell<Vec<Value>>>),
     Object(Rc<RefCell<HashMap<String, Value>>>),
     Function(Rc<Function>),
@@ -117,19 +134,57 @@ pub enum Value {
     File(Rc<RefCell<File>>),
 }
 
+#[derive(Clone)]
+pub enum Value {
+    Number(f64),
+    Bool(bool),
+    Nil,
+    Object(Object),
+}
+
 impl Value {
+    pub fn new_string(string: String) -> Self {
+        Self::Object(Object::String(string))
+    }
+
+    pub fn new_list(list: Vec<Value>) -> Self {
+        Self::Object(Object::List(Rc::new(RefCell::new(list))))
+    }
+
+    pub fn new_object(object: HashMap<String, Value>) -> Self {
+        Self::Object(Object::Object(Rc::new(RefCell::new(object))))
+    }
+
+    pub fn new_function(function: Function) -> Self {
+        Self::Object(Object::Function(Rc::new(function)))
+    }
+
+    pub fn new_closure(function: Rc<Function>, up_values: Vec<Rc<RefCell<UpValue>>>) -> Self {
+        Self::Object(Object::Closure(Rc::new(Closure::new(function, up_values))))
+    }
+
+    pub fn new_native(native: Native) -> Self {
+        Self::Object(Object::Native(native))
+    }
+
+    pub fn new_file(file: File) -> Self {
+        Self::Object(Object::File(Rc::new(RefCell::new(file))))
+    }
+
     pub fn get_type(&self) -> &'static str {
         match self {
             Value::Number(_) => "عدد",
-            Value::String(_) => "نص",
             Value::Bool(_) => "ثنائي",
             Value::Nil => "عدم",
-            Value::List(_) => "قائمة",
-            Value::Object(_) => "كائن",
-            Value::Function(_) => unreachable!(),
-            Value::Closure(_) => "دالة",
-            Value::Native(_) => "دالة مدمجة",
-            Value::File(_) => "ملف",
+            Value::Object(obj) => match obj {
+                Object::String(_) => "نص",
+                Object::List(_) => "قائمة",
+                Object::Object(_) => "كائن",
+                Object::Function(_) => unreachable!(),
+                Object::Closure(_) => "دالة",
+                Object::Native(_) => "دالة مدمجة",
+                Object::File(_) => "ملف",
+            },
         }
     }
 
@@ -143,8 +198,15 @@ impl Value {
 
     pub fn is_string(&self) -> bool {
         match self {
-            Value::String(_) => true,
+            Value::Object(Object::String(_)) => true,
             _ => false,
+        }
+    }
+
+    pub fn as_string(&self) -> String {
+        match self {
+            Value::Object(Object::String(string)) => string.clone(),
+            _ => unreachable!(),
         }
     }
 
@@ -155,9 +217,23 @@ impl Value {
         }
     }
 
+    pub fn is_int(&self) -> bool {
+        match self {
+            Value::Number(n) => n.fract() == 0.0,
+            _ => false,
+        }
+    }
+
+    pub fn as_int(&self) -> i32 {
+        match self {
+            Value::Number(n) => *n as i32,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn as_function(&self) -> Rc<Function> {
         match self {
-            Value::Function(f) => Rc::clone(f),
+            Value::Object(Object::Function(function)) => Rc::clone(function),
             _ => unreachable!(),
         }
     }
@@ -186,20 +262,9 @@ impl Value {
     }
 }
 
-impl TryInto<isize> for Value {
-    type Error = ();
-
-    fn try_into(self) -> Result<isize, Self::Error> {
-        match self {
-            Value::Number(n) => {
-                if n.fract() == 0.0 {
-                    Ok(n as isize)
-                } else {
-                    Err(())
-                }
-            }
-            _ => Err(()),
-        }
+impl From<String> for Value {
+    fn from(string: String) -> Self {
+        Value::new_string(string)
     }
 }
 
@@ -210,47 +275,54 @@ impl fmt::Display for Value {
             "{}",
             match self {
                 Self::Number(n) => format!("{}", n),
-                Self::String(string) => format!("{}", string),
                 Self::Bool(val) => format!("{}", if *val { "صحيح" } else { "خطأ" }),
                 Self::Nil => format!("عدم"),
-                Self::List(items) => {
-                    let mut buffer = String::from("[");
-
-                    match items.borrow().get(0) {
-                        Some(item) => {
-                            buffer += format!("{}", item).as_str();
-                            for item in items.borrow().iter().skip(1) {
-                                buffer += format!("، {}", item).as_str();
+                Self::Object(obj) => {
+                    match obj {
+                        Object::String(string) => format!("{}", string),
+                        Object::List(items) => {
+                            let mut buffer = String::from("[");
+                            match items.borrow().get(0) {
+                                Some(item) => {
+                                    buffer += format!("{}", item).as_str();
+                                    for item in items.borrow().iter().skip(1) {
+                                        buffer += format!("، {}", item).as_str();
+                                    }
+                                }
+                                None => {}
                             }
+                            buffer += "]";
+                            buffer
                         }
-                        None => {}
-                    }
-
-                    buffer += "]";
-                    buffer
-                }
-                Self::Object(items) => {
-                    let mut buffer = String::from("{");
-
-                    match items.borrow().iter().nth(0) {
-                        Some((key, value)) => {
-                            buffer += format!("{key}: {value}،").as_str();
-                            for (key, value) in items.borrow().iter().skip(1) {
-                                buffer += format!("، {key}: {value}").as_str();
+                        Object::Object(items) => {
+                            let mut buffer = String::from("{");
+                            match items.borrow().iter().nth(0) {
+                                Some((key, value)) => {
+                                    buffer += format!("{key}: {value}،").as_str();
+                                    for (key, value) in items.borrow().iter().skip(1) {
+                                        buffer += format!("، {key}: {value}").as_str();
+                                    }
+                                }
+                                None => {}
                             }
-                        }
-                        None => {}
-                    }
 
-                    buffer += "}";
-                    buffer
+                            buffer += "}";
+                            buffer
+                        }
+                        Object::Function(function) => format!("{}", function),
+                        Object::Closure(closure) => format!("{}", closure.function),
+                        Object::Native(_) => format!("<دالة مدمجة>"),
+                        Object::File(file) => format!("<ملف {:?}>", file.borrow()),
+                    }
                 }
-                Self::Function(function) => format!("{}", function),
-                Self::Closure(closure) => format!("{}", closure.function),
-                Self::Native(_) => format!("<دالة مدمجة>"),
-                Self::File(file) => format!("<ملف {:?}>", file.borrow()),
             }
         )
+    }
+}
+
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
     }
 }
 
@@ -271,7 +343,7 @@ impl ops::Add for Value {
     fn add(self, other: Self) -> Self::Output {
         match (&self, &other) {
             (Self::Number(a), Self::Number(b)) => Self::Number(a + b),
-            _ => Self::String(format!("{}{}", self, other)),
+            _ => Self::Object(Object::String(format!("{}{}", self, other))),
         }
     }
 }
@@ -330,12 +402,13 @@ impl ops::Not for Value {
 }
 
 impl cmp::PartialEq for Value {
+    //TODO add comparing other object types
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Number(a), Self::Number(b)) => a == b,
-            (Self::String(a), Self::String(b)) => a == b,
             (Self::Bool(a), Self::Bool(b)) => a == b,
             (Self::Nil, Self::Nil) => true,
+            (Self::Object(Object::String(a)), Self::Object(Object::String(b))) => a == b,
             _ => false,
         }
     }
