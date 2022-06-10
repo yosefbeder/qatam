@@ -44,11 +44,13 @@ impl Parser {
                 self.current = self.tokenizer.next_token();
                 continue;
             }
+
+            self.previous = Some(self.current.clone());
+
             if self.current.typ == TokenType::EOF {
                 break;
             }
 
-            self.previous = Some(self.current.clone());
             self.current = self.tokenizer.next_token();
 
             if let Some(token) = self.previous.clone() {
@@ -205,7 +207,6 @@ impl Parser {
     fn group(&mut self, reporter: &mut dyn Reporter) -> Result<Expr, ()> {
         let expr = self.parse_expr(reporter)?;
         self.consume(TokenType::CParen, "توقعت ')' لإغلاق المجموعة", reporter)?;
-
         return Ok(expr);
     }
 
