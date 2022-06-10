@@ -2,11 +2,14 @@ use super::{
     chunk::Instruction::{self, *},
     natives::NATIVES,
     path::resolve_path,
-    reporter::Reporter,
+    reporter::{Phase, Report, Reporter},
+    token::Token,
     utils::combine,
     value::{Arity, Closure, Function, Native, Object, UpValue, Value},
 };
-use std::{cell::RefCell, collections::HashMap, fs::File, path::PathBuf, rc::Rc, time::SystemTime};
+use std::{
+    cell::RefCell, collections::HashMap, fmt, fs::File, path::PathBuf, rc::Rc, time::SystemTime,
+};
 
 pub struct Vm {
     stack: Vec<Value>,
@@ -90,7 +93,7 @@ impl Vm {
         }
     }
 
-    pub fn run(&mut self, function: Function, _: &mut dyn Reporter) -> Result<(), ()> {
+    pub fn run(&mut self, function: Function, reporter: &mut dyn Reporter) -> Result<(), ()> {
         if cfg!(feature = "debug-execution") {
             println!("---");
             println!("[DEBUG] started executing");
@@ -102,8 +105,77 @@ impl Vm {
             .push(Value::Object(Object::Closure(Rc::clone(&closure))));
         let res = Frame::new_closure(self, closure, 0, None).run(0); //TODO backtracing
         self.stack.pop();
-        res.map_err(|value| println!("{value}"))?;
+        res.map_err(|(value, mut backtrace)| {
+            reporter.error(Report::new(
+                Phase::Runtime,
+                value.to_string(),
+                Rc::clone(&backtrace.last().token),
+            ));
+            print!("{backtrace}");
+        })?;
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+struct BacktraceFrame {
+    token: Rc<Token>,
+    name: Option<String>,
+}
+
+impl BacktraceFrame {
+    fn new(frame: &Frame) -> Self {
+        if frame.is_native() {
+            unreachable!();
+        }
+        Self {
+            token: frame.cur_token(),
+            name: frame.get_closure().get_name().clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct Backtrace {
+    frames: Vec<BacktraceFrame>,
+}
+
+impl Backtrace {
+    fn new() -> Self {
+        Self { frames: Vec::new() }
+    }
+
+    fn push(&mut self, frame: BacktraceFrame) {
+        self.frames.push(frame);
+    }
+
+    fn last(&mut self) -> &BacktraceFrame {
+        self.frames.last().unwrap()
+    }
+}
+
+impl fmt::Display for Backtrace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut buffer = String::new();
+        let mut iter = self.frames.iter().rev().skip(1);
+        while let Some(frame) = iter.next() {
+            let (line, col) = frame.token.get_pos();
+            let name = frame.name.clone().unwrap_or("غير معروفة".to_string());
+            buffer += format!("في {name} {line}:{col}\n").as_str();
+        }
+        write!(f, "{buffer}")
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Handler {
+    slots: usize,
+    ip: usize,
+}
+
+impl Handler {
+    fn new(slots: usize, ip: usize) -> Self {
+        Self { slots, ip }
     }
 }
 
@@ -114,6 +186,7 @@ pub enum Frame<'a, 'b> {
         ip: usize,
         slots: usize,
         enclosing_up_values: Option<&'b Vec<Rc<RefCell<UpValue>>>>,
+        handlers: Vec<Handler>,
     },
     Native {
         state: &'a mut Vm,
@@ -136,6 +209,7 @@ impl<'a, 'b> Frame<'a, 'b> {
             ip: 0,
             slots,
             enclosing_up_values,
+            handlers: Vec::new(),
         }
     }
 
@@ -169,9 +243,9 @@ impl<'a, 'b> Frame<'a, 'b> {
         }
     }
 
-    fn get_ip_mut(&mut self) -> &mut usize {
+    fn set_ip(&mut self, next: usize) {
         match self {
-            Self::Closure { ip, .. } => ip,
+            Self::Closure { ip, .. } => *ip = next,
             Self::Native { .. } => unreachable!(),
         }
     }
@@ -182,6 +256,13 @@ impl<'a, 'b> Frame<'a, 'b> {
                 enclosing_up_values,
                 ..
             } => enclosing_up_values,
+            Self::Native { .. } => unreachable!(),
+        }
+    }
+
+    fn get_handlers_mut(&mut self) -> &mut Vec<Handler> {
+        match self {
+            Self::Closure { handlers, .. } => handlers,
             Self::Native { .. } => unreachable!(),
         }
     }
@@ -254,6 +335,10 @@ impl<'a, 'b> Frame<'a, 'b> {
 
     fn cur_instr(&self) -> Option<Instruction> {
         Some(self.cur_byte()?.into())
+    }
+
+    fn cur_token(&self) -> Rc<Token> {
+        self.get_closure().get_chunk().get_token(self.get_ip())
     }
 
     fn pop(&mut self) -> Value {
@@ -377,9 +462,16 @@ impl<'a, 'b> Frame<'a, 'b> {
     }
     //<<
 
-    fn run(&mut self, argc: usize) -> Result<Option<Value>, Value> {
+    fn string_to_err(&self, string: String) -> (Value, Backtrace) {
+        let mut backtrace = Backtrace::new();
+        backtrace.push(BacktraceFrame::new(self));
+        (string.to_string().into(), backtrace)
+    }
+
+    fn run(&mut self, argc: usize) -> Result<Option<Value>, (Value, Backtrace)> {
         if self.is_native() {
-            let returned = self.get_native()(self, argc)?;
+            let returned =
+                self.get_native()(self, argc).map_err(|value| (value, Backtrace::new()))?;
             return Ok(Some(returned));
         }
 
@@ -427,7 +519,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                 Negate => {
                     let popped = self.pop();
                     if !popped.is_number() {
-                        return Err(Value::new_string("يجب أن يكون المعامل رقماً".to_string()));
+                        return Err(self.string_to_err("يجب أن يكون المعامل رقماً".to_string()));
                     }
                     self.push(-popped);
                 }
@@ -440,9 +532,9 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_subtractable(&a, &b) {
-                        return Err(Value::new_string(
-                            "لا يقبل المعاملان الطرح من بعضهما".to_string(),
-                        ));
+                        return Err(
+                            self.string_to_err("لا يقبل المعاملان الطرح من بعضهما".to_string())
+                        );
                     }
                     self.push(a - b);
                 }
@@ -450,9 +542,9 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_multipliable(&a, &b) {
-                        return Err(Value::new_string(
-                            "لا يقبل المعاملان الضرب في بعضهما".to_string(),
-                        ));
+                        return Err(
+                            self.string_to_err("لا يقبل المعاملان الضرب في بعضهما".to_string())
+                        );
                     }
                     self.push(a * b);
                 }
@@ -460,9 +552,9 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_dividable(&a, &b) {
-                        return Err(Value::new_string(
-                            "لا يقبل المعاملان القسمة على بعضهما".to_string(),
-                        ));
+                        return Err(
+                            self.string_to_err("لا يقبل المعاملان القسمة على بعضهما".to_string())
+                        );
                     }
                     self.push(a / b);
                 }
@@ -470,9 +562,9 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_remainderable(&a, &b) {
-                        return Err(Value::new_string(
-                            "لا يقبل المعاملان القسمة على بعضهما".to_string(),
-                        ));
+                        return Err(
+                            self.string_to_err("لا يقبل المعاملان القسمة على بعضهما".to_string())
+                        );
                     }
                     self.push(a % b);
                 }
@@ -489,9 +581,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_numbers(&a, &b) {
-                        return Err(Value::new_string(
-                            "يجب أن يكون المعاملان أرقاماً".to_string(),
-                        ));
+                        return Err(self.string_to_err("يجب أن يكون المعاملان أرقاماً".to_string()));
                     }
                     self.push(Value::Bool(a > b));
                 }
@@ -499,9 +589,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_numbers(&a, &b) {
-                        return Err(Value::new_string(
-                            "يجب أن يكون المعاملان أرقاماً".to_string(),
-                        ));
+                        return Err(self.string_to_err("يجب أن يكون المعاملان أرقاماً".to_string()));
                     }
                     self.push(Value::Bool(a >= b));
                 }
@@ -509,9 +597,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_numbers(&a, &b) {
-                        return Err(Value::new_string(
-                            "يجب أن يكون المعاملان أرقاماً".to_string(),
-                        ));
+                        return Err(self.string_to_err("يجب أن يكون المعاملان أرقاماً".to_string()));
                     }
                     self.push(Value::Bool(a < b));
                 }
@@ -519,9 +605,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_numbers(&a, &b) {
-                        return Err(Value::new_string(
-                            "يجب أن يكون المعاملان أرقاماً".to_string(),
-                        ));
+                        return Err(self.string_to_err("يجب أن يكون المعاملان أرقاماً".to_string()));
                     }
                     self.push(Value::Bool(a <= b));
                 }
@@ -549,7 +633,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let name = self.pop().to_string();
                     let value = self.pop();
                     if self.get_state().globals.contains_key(&name) {
-                        return Err(Value::new_string("يوجد متغير بهذا الاسم".to_string()));
+                        return Err(self.string_to_err("يوجد متغير بهذا الاسم".to_string()));
                     }
                     self.get_state_mut().globals.insert(name.clone(), value);
                 }
@@ -557,14 +641,14 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let name = self.pop().to_string();
                     let value = self.last().clone();
                     if !self.get_state().globals.contains_key(&name) {
-                        return Err(Value::new_string("لا يوجد متغير بهذا الاسم".to_string()));
+                        return Err(self.string_to_err("لا يوجد متغير بهذا الاسم".to_string()));
                     }
                     self.get_state_mut().globals.insert(name, value);
                 }
                 GetGlobal => {
                     let name = self.pop().to_string();
                     if !self.get_state().globals.contains_key(&name) {
-                        return Err(Value::new_string("لا يوجد متغير بهذا الاسم".to_string()));
+                        return Err(self.string_to_err("لا يوجد متغير بهذا الاسم".to_string()));
                     }
                     self.push(self.get_state().globals.get(&name).unwrap().clone());
                 }
@@ -605,46 +689,46 @@ impl<'a, 'b> Frame<'a, 'b> {
                     match obj {
                         Value::Object(Object::Object(items)) => {
                             if !key.is_string() {
-                                return Err(Value::new_string(
-                                    "يجب أن يكون اسم الخاصية نصاً".to_string(),
-                                ));
+                                return Err(
+                                    self.string_to_err("يجب أن يكون اسم الخاصية نصاً".to_string())
+                                );
                             }
                             if let Some(value) = items.borrow().get(&key.to_string()) {
                                 self.push(value.clone());
                             } else {
-                                return Err(Value::new_string(
-                                    "لا يوجد قيمة بهذا الاسم".to_string(),
-                                ));
+                                return Err(
+                                    self.string_to_err("لا يوجد قيمة بهذا الاسم".to_string())
+                                );
                             }
                         }
                         Value::Object(Object::List(items)) => {
                             if !key.is_int() {
-                                return Err(Value::new_string(
+                                return Err(self.string_to_err(
                                     "يجب أن يكون رقم العنصر عدداً صحيحاً".to_string(),
                                 ));
                             }
                             let idx = get_absolute_idx(key.as_int(), items.borrow().len())
                                 .map_err(|_| {
-                                    Value::new_string("لا يوجد عنصر بهذا الرقم".to_string())
+                                    self.string_to_err("لا يوجد عنصر بهذا الرقم".to_string())
                                 })?;
                             self.push(items.borrow()[idx].clone());
                         }
                         Value::Object(Object::String(string)) => {
                             if !key.is_int() {
-                                return Err(Value::new_string(
+                                return Err(self.string_to_err(
                                     "يجب أن يكون رقم العنصر عدداً صحيحاً".to_string(),
                                 ));
                             }
                             let idx = get_absolute_idx(key.as_int(), string.chars().count())
                                 .map_err(|_| {
-                                    Value::new_string("لا يوجد عنصر بهذا الرقم".to_string())
+                                    self.string_to_err("لا يوجد عنصر بهذا الرقم".to_string())
                                 })?;
                             self.push(Value::new_string(
                                 string.chars().nth(idx).unwrap().to_string(),
                             ));
                         }
                         _ => {
-                            return Err(Value::new_string(
+                            return Err(self.string_to_err(
                                 "يجب أن يكون المتغير نص أو قائمة أو كائن".to_string(),
                             ))
                         }
@@ -656,9 +740,9 @@ impl<'a, 'b> Frame<'a, 'b> {
                     match obj {
                         Value::Object(Object::Object(items)) => {
                             if !key.is_string() {
-                                return Err(Value::new_string(
-                                    "يجب أن يكون اسم الخاصية نصاً".to_string(),
-                                ));
+                                return Err(
+                                    self.string_to_err("يجب أن يكون اسم الخاصية نصاً".to_string())
+                                );
                             }
                             items
                                 .borrow_mut()
@@ -666,22 +750,22 @@ impl<'a, 'b> Frame<'a, 'b> {
                         }
                         Value::Object(Object::List(items)) => {
                             if !key.is_int() {
-                                return Err(Value::new_string(
+                                return Err(self.string_to_err(
                                     "يجب أن يكون رقم العنصر عدداً صحيحاً".to_string(),
                                 ));
                             }
 
                             let idx = get_absolute_idx(key.as_int(), items.borrow().len())
                                 .map_err(|_| {
-                                    Value::new_string("لا يوجد عنصر بهذا الرقم".to_string())
+                                    self.string_to_err("لا يوجد عنصر بهذا الرقم".to_string())
                                 })?;
 
                             items.borrow_mut()[idx] = self.last().clone();
                         }
                         _ => {
-                            return Err(Value::new_string(
-                                "يجب أن يكون المتغير قائمة أو كائن".to_string(),
-                            ))
+                            return Err(
+                                self.string_to_err("يجب أن يكون المتغير قائمة أو كائن".to_string())
+                            )
                         }
                     }
                 }
@@ -719,32 +803,43 @@ impl<'a, 'b> Frame<'a, 'b> {
                 Call => {
                     let argc = self.read_byte();
                     let idx = self.get_state().stack.len() - argc - 1;
-                    progress = 2;
-                    match self.get_state().stack[idx].clone() {
+                    let enclosing_closure = self.get_closure().clone();
+                    let mut frame = match self.get_state().stack[idx].clone() {
                         Value::Object(Object::Closure(closure)) => {
-                            Vm::check_arity(closure.get_arity(), argc)?;
-                            let enclosing_closure = self.get_closure().clone();
-                            let mut frame = Frame::new_closure(
+                            Vm::check_arity(closure.get_arity(), argc)
+                                .map_err(|value| self.string_to_err(value.to_string()))?;
+                            Frame::new_closure(
                                 self.get_state_mut(),
                                 closure,
                                 idx,
                                 Some(enclosing_closure.get_up_values()),
-                            );
-                            let returned = frame.run(argc)?.unwrap();
-                            self.truncate(idx);
-                            self.push(returned);
+                            )
                         }
                         Value::Object(Object::Native(native)) => {
                             let path = self.get_path().clone();
 
-                            let mut frame =
-                                Frame::new_native(self.get_state_mut(), native, idx, path);
-                            let returned = frame.run(argc)?.unwrap();
-                            self.truncate(idx);
-                            self.push(returned);
+                            Frame::new_native(self.get_state_mut(), native, idx, path)
                         }
                         _ => todo!(),
-                    }
+                    };
+                    progress = 2;
+                    match frame.run(argc) {
+                        Ok(returned) => {
+                            self.truncate(idx);
+                            self.push(returned.unwrap());
+                        }
+                        Err((value, mut backtrace)) => match self.get_handlers_mut().pop() {
+                            Some(Handler { slots, ip }) => {
+                                self.truncate(slots);
+                                self.push(value);
+                                progress = (ip - self.get_ip()) as i32;
+                            }
+                            None => {
+                                backtrace.push(BacktraceFrame::new(self));
+                                return Err((value, backtrace));
+                            }
+                        },
+                    };
                 }
                 GetUpValue => {
                     let idx = self.read_byte();
@@ -771,9 +866,33 @@ impl<'a, 'b> Frame<'a, 'b> {
                     self.pop();
                 }
                 Return => return Ok(Some(self.pop())),
+                AppendHandler => {
+                    let handler = Handler::new(
+                        self.get_state().stack.len(),
+                        self.get_ip() + self.read_byte(),
+                    );
+                    self.get_handlers_mut().push(handler);
+                    progress = 3;
+                }
+                PopHandler => {
+                    self.get_handlers_mut().pop();
+                }
+                Throw => match self.get_handlers_mut().pop() {
+                    Some(Handler { slots, ip }) => {
+                        let throwed = self.pop();
+                        self.truncate(slots);
+                        self.push(throwed);
+                        progress = (ip - self.get_ip()) as i32;
+                    }
+                    None => {
+                        let mut backtrace = Backtrace::new();
+                        backtrace.push(BacktraceFrame::new(self));
+                        return Err((self.pop(), backtrace));
+                    }
+                },
                 Unknown => unreachable!(),
             }
-            *self.get_ip_mut() = (self.get_ip() as i32 + progress) as usize;
+            self.set_ip((self.get_ip() as i32 + progress) as usize);
             if cfg!(feature = "debug-execution") {
                 println!("{:#?}", self.get_state().stack);
             }

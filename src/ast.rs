@@ -77,8 +77,23 @@ pub enum Stml {
     Expr(Expr),
 }
 
+impl Stml {
+    fn as_block(&self) -> &Vec<Stml> {
+        match self {
+            Self::Block(stmts) => stmts,
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl fmt::Debug for Stml {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn fmt_as_block(buffer: &mut String, block: &Stml) {
+            for stml in block.as_block() {
+                *buffer += format!("{stml:?}").as_str();
+            }
+        }
+
         write!(
             f,
             "{}",
@@ -104,13 +119,7 @@ impl fmt::Debug for Stml {
                             .collect::<Vec<_>>()
                             .join("، "),
                     );
-                    let stmls = match &**body {
-                        Stml::Block(stmls) => stmls,
-                        _ => unreachable!(),
-                    };
-                    for stml in stmls {
-                        buffer += format!("{:?}", stml).as_str();
-                    }
+                    fmt_as_block(&mut buffer, body);
                     buffer += "<أنهي>\n";
 
                     buffer
@@ -135,11 +144,12 @@ impl fmt::Debug for Stml {
                 Stml::IfElse(expr, then_branch, else_branch) => {
                     let mut buffer = String::new();
                     buffer += format!("<إن {:?}>\n", expr).as_str();
-                    buffer += format!("{:?}", then_branch).as_str();
+                    fmt_as_block(&mut buffer, then_branch);
+
                     match else_branch {
                         Some(else_branch) => {
                             buffer += "<إلا>\n";
-                            buffer += format!("{:?}", else_branch).as_str();
+                            fmt_as_block(&mut buffer, else_branch);
                         }
                         None => {}
                     }
@@ -149,26 +159,14 @@ impl fmt::Debug for Stml {
                 Stml::While(expr, body) => {
                     let mut buffer = String::new();
                     buffer += &format!("<بينما {:?}>\n", expr);
-                    let stmls = match &**body {
-                        Stml::Block(stmls) => stmls,
-                        _ => unreachable!(),
-                    };
-                    for stml in stmls {
-                        buffer += format!("{:?}", stml).as_str();
-                    }
+                    fmt_as_block(&mut buffer, body);
                     buffer += "<أنهي>\n";
                     buffer
                 }
                 Stml::Loop(body) => {
                     let mut buffer = String::new();
                     buffer += &format!("<كرر>\n");
-                    let stmls = match &**body {
-                        Stml::Block(stmls) => stmls,
-                        _ => unreachable!(),
-                    };
-                    for stml in stmls {
-                        buffer += format!("{:?}", stml).as_str();
-                    }
+                    fmt_as_block(&mut buffer, body);
                     buffer += "<أنهي>\n";
                     buffer
                 }
@@ -184,7 +182,15 @@ impl fmt::Debug for Stml {
                     buffer += &format!("<تصدير\n{stml:?}>\n");
                     buffer
                 }
-                Stml::TryCatch(_, _, _) => unimplemented!(),
+                Stml::TryCatch(try_block, error, catch_block) => {
+                    let mut buffer = String::new();
+                    buffer += "<جرب>\n";
+                    fmt_as_block(&mut buffer, try_block);
+                    buffer += format!("<أمسك {}>\n", error.lexeme.clone()).as_str();
+                    fmt_as_block(&mut buffer, catch_block);
+                    buffer += "<أنهي>\n";
+                    buffer
+                }
             }
         )
     }

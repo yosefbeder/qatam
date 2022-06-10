@@ -100,6 +100,10 @@ impl Closure {
         }
     }
 
+    pub fn get_name(&self) -> &Option<String> {
+        &self.function.name
+    }
+
     pub fn get_chunk(&self) -> &Chunk {
         &self.function.chunk
     }
@@ -117,7 +121,7 @@ impl Closure {
     }
 
     pub fn get_up_value(&self, idx: usize) -> Rc<RefCell<UpValue>> {
-        self.up_values.get(idx).unwrap().clone()
+        Rc::clone(self.up_values.get(idx).unwrap())
     }
 }
 

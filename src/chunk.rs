@@ -46,6 +46,9 @@ pub enum Instruction {
     Set,
     BuildList,
     BuildObject,
+    AppendHandler,
+    PopHandler,
+    Throw,
     Unknown,
 }
 
@@ -88,7 +91,10 @@ impl Into<u8> for Instruction {
             Set => 31,
             BuildList => 32,
             BuildObject => 33,
-            Unknown => 34,
+            AppendHandler => 34,
+            PopHandler => 35,
+            Throw => 36,
+            Unknown => 37,
         }
     }
 }
@@ -130,6 +136,9 @@ impl From<u8> for Instruction {
             31 => Set,
             32 => BuildList,
             33 => BuildObject,
+            34 => AppendHandler,
+            35 => PopHandler,
+            36 => Throw,
             _ => Unknown,
         }
     }
@@ -172,6 +181,9 @@ impl fmt::Debug for Instruction {
             Set => "SET",
             BuildList => "BUILD_LIST",
             BuildObject => "BUILD_OBJECT",
+            AppendHandler => "APPEND_HANDLER",
+            PopHandler => "POP_HANDLER",
+            Throw => "THROW",
             Unknown => "UNKNOWN",
         };
 
@@ -222,7 +234,7 @@ impl Chunk {
         match instr {
             Pop | Negate | Add | Subtract | Multiply | Divide | Remainder | Not | Equal
             | Greater | GreaterEqual | Less | LessEqual | Return | GetGlobal | SetGlobal
-            | DefineGlobal | Get | Set | CloseUpValue => {
+            | DefineGlobal | Get | Set | CloseUpValue | PopHandler | Throw => {
                 buffer += "\n";
                 return (buffer, 1);
             }
@@ -254,7 +266,7 @@ impl Chunk {
                 }
                 return (buffer, 3);
             }
-            Jump | JumpIfFalse | JumpIfTrue | Loop => {
+            Jump | JumpIfFalse | JumpIfTrue | Loop | AppendHandler => {
                 let size = combine(self.bytes[offset + 1], self.bytes[offset + 2]) as usize;
                 buffer += format!("{}\n", size).as_str();
                 return (buffer, 3);
@@ -403,7 +415,7 @@ impl Chunk {
         self.constants.get(idx).unwrap().clone()
     }
 
-    pub fn _get_token(&self, idx: usize) -> Rc<Token> {
+    pub fn get_token(&self, idx: usize) -> Rc<Token> {
         Rc::clone(&self.tokens.get(idx).unwrap().as_ref().unwrap())
     }
 }

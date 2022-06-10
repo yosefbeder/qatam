@@ -454,12 +454,12 @@ impl Parser {
         let body = self.block(reporter)?;
         self.consume(TokenType::Catch, "توقعت 'أمسك'", reporter)?;
         self.consume(TokenType::OParen, "توقعت '('", reporter)?;
-        let name = self.clone_previous();
         self.consume(
             TokenType::Identifier,
             "توقعت اسم المعامل الذي سيحمل الخطأ",
             reporter,
         )?;
+        let name = self.clone_previous();
         self.consume(TokenType::CParen, "توقعت ')'", reporter)?;
         self.consume(TokenType::OBrace, "توقعت '{'", reporter)?;
         let catch_body = self.block(reporter)?;

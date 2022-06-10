@@ -200,7 +200,7 @@ impl Token {
         }
     }
 
-    fn get_pos(&self) -> (usize, usize) {
+    pub fn get_pos(&self) -> (usize, usize) {
         let mut offset = 0;
         let mut line = 1;
         let mut col = 1;
