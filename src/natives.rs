@@ -69,17 +69,19 @@ pub fn size(frame: &Frame, argc: usize) -> Result<Value, Value> {
 
 pub fn props(frame: &Frame, argc: usize) -> Result<Value, Value> {
     Vm::check_arity(Arity::Fixed(1), argc)?;
-    let arg = frame.nth_object(1)?;
-    let mut props = Vec::new();
+    let arg = frame.nth_object(1)?.borrow();
+    let mut res = Vec::new();
+    let mut entries = arg.iter().collect::<Vec<_>>();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
 
-    for (key, value) in arg.borrow().iter() {
+    for (key, value) in entries.into_iter() {
         let mut prop = Vec::with_capacity(2);
         prop.push(Value::new_string(key.to_string()));
         prop.push(value.clone());
-        props.push(Value::new_list(prop));
+        res.push(Value::new_list(prop));
     }
 
-    Ok(Value::new_list(props))
+    Ok(Value::new_list(res))
 }
 
 pub fn push(frame: &Frame, argc: usize) -> Result<Value, Value> {

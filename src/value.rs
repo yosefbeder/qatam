@@ -300,10 +300,13 @@ impl fmt::Display for Value {
                         }
                         Object::Object(items) => {
                             let mut buffer = String::from("{");
-                            match items.borrow().iter().nth(0) {
+                            let items = items.borrow();
+                            let mut entries = items.iter().collect::<Vec<_>>();
+                            entries.sort_by(|a, b| a.0.cmp(&b.0));
+                            match entries.iter().nth(0) {
                                 Some((key, value)) => {
-                                    buffer += format!("{key}: {value}،").as_str();
-                                    for (key, value) in items.borrow().iter().skip(1) {
+                                    buffer += format!("{key}: {value}").as_str();
+                                    for (key, value) in entries.iter().skip(1) {
                                         buffer += format!("، {key}: {value}").as_str();
                                     }
                                 }
