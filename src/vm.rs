@@ -111,7 +111,7 @@ impl Vm {
                 value.to_string(),
                 Rc::clone(&backtrace.last().token),
             ));
-            print!("{backtrace}");
+            eprint!("{backtrace}");
         })?;
         Ok(())
     }
