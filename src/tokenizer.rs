@@ -8,6 +8,17 @@ pub struct Tokenizer {
     current: usize,
 }
 
+fn is_whitespace(c: char) -> bool {
+    [
+        '\u{0009}', '\u{000b}', '\u{000c}', '\u{0020}', '\u{0085}', '\u{200e}', '\u{200f}',
+    ]
+    .contains(&c)
+}
+
+fn is_newline(c: char) -> bool {
+    ['\u{000a}', '\u{000d}', '\u{2028}', '\u{2029}'].contains(&c)
+}
+
 impl Tokenizer {
     pub fn new(source: String, path: Option<PathBuf>) -> Self {
         Self {
@@ -35,6 +46,13 @@ impl Tokenizer {
     fn check(&mut self, expected_c: char) -> bool {
         match self.peek(0) {
             Some(c) => c == expected_c,
+            None => false,
+        }
+    }
+
+    fn check_newline(&mut self) -> bool {
+        match self.peek(0) {
+            Some(c) => is_newline(c),
             None => false,
         }
     }
@@ -105,7 +123,7 @@ impl Tokenizer {
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.peek(0) {
             match c {
-                '\r' | '\t' | ' ' => {
+                x if is_whitespace(x) => {
                     self.next();
                     self.start = self.current;
                 }
@@ -119,7 +137,7 @@ impl Tokenizer {
 
         if let Some(c) = self.next() {
             match c {
-                '\n' => self.pop_token(TokenType::NewLine),
+                x if is_newline(x) => self.pop_token(TokenType::NewLine),
                 '(' => self.pop_token(TokenType::OParen),
                 ')' => self.pop_token(TokenType::CParen),
                 '{' => self.pop_token(TokenType::OBrace),
@@ -189,7 +207,7 @@ impl Tokenizer {
                             '"' => {
                                 return self.pop_token(TokenType::String);
                             }
-                            '\n' => {
+                            x if is_newline(x) => {
                                 let token = self.pop_token(TokenType::UnTermedString);
                                 return token;
                             }
@@ -207,7 +225,7 @@ impl Tokenizer {
                     return token;
                 }
                 '#' => {
-                    while !self.at_end() && !self.check('\n') {
+                    while !self.at_end() && !self.check_newline() {
                         self.next();
                     }
                     self.pop_token(TokenType::Comment)
