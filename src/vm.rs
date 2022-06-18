@@ -354,8 +354,7 @@ impl<'a, 'b> Frame<'a, 'b> {
     }
 
     fn get_mut(&mut self, idx: usize) -> &mut Value {
-        let slots = self.get_slots();
-        &mut self.get_state_mut().stack[slots + idx]
+        &mut self.get_state_mut().stack[idx]
     }
 
     fn truncate(&mut self, len: usize) {
