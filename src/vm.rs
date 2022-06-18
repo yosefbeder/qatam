@@ -105,11 +105,11 @@ impl Vm {
             .push(Value::Object(Object::Closure(Rc::clone(&closure))));
         let res = Frame::new_closure(self, closure, 0, None).run(0); //TODO backtracing
         self.stack.pop();
-        res.map_err(|(value, mut backtrace)| {
+        res.map_err(|(value, backtrace)| {
             reporter.error(Report::new(
                 Phase::Runtime,
                 value.to_string(),
-                Rc::clone(&backtrace.last().token),
+                Rc::clone(&backtrace.frames[0].token),
             ));
             eprint!("{backtrace}");
         })?;
@@ -148,16 +148,12 @@ impl Backtrace {
     fn push(&mut self, frame: BacktraceFrame) {
         self.frames.push(frame);
     }
-
-    fn last(&mut self) -> &BacktraceFrame {
-        self.frames.last().unwrap()
-    }
 }
 
 impl fmt::Display for Backtrace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut buffer = String::new();
-        let mut iter = self.frames.iter().rev().skip(1);
+        let mut iter = self.frames.iter();
         while let Some(frame) = iter.next() {
             let (line, col) = frame.token.get_pos();
             let name = frame.name.clone().unwrap_or("غير معروفة".to_string());

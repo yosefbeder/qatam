@@ -241,24 +241,23 @@ impl fmt::Display for Token {
         let padding = " ".repeat(format!("{line}").len() + 1);
 
         let mut buffer = String::new();
-        match &self.path {
-            Some(path) => {
-                buffer += format!("{}\n", path.display()).as_str();
-                buffer += padding.as_str();
-                buffer += "|\n";
-                buffer += format!("{line} | {content}\n").as_str();
-                buffer += padding.as_str();
-                buffer += "| ";
-            }
-            None => {
-                buffer += format!("{content}\n").as_str();
-            }
+        if self.path.is_some() {
+            buffer += padding.as_str();
+            buffer += "|\n";
+            buffer += format!("{line} | {content}\n").as_str();
+            buffer += padding.as_str();
+            buffer += "| ";
+        } else {
+            buffer += format!("{content}\n").as_str();
         }
         for _ in 0..col - 1 {
             buffer += " ";
         }
         for _ in 0..self.length {
             buffer += "~";
+        }
+        if let Some(path) = &self.path {
+            buffer += format!("\n{}", path.display()).as_str();
         }
         write!(f, "{}", buffer,)
     }
