@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const { rm, writeFile } = require('fs/promises');
+const path = require('path');
 
 function isValidate(body) {
   const keys = Object.keys(body);
@@ -10,9 +11,12 @@ function isValidate(body) {
 }
 
 async function executeCode(code) {
-  const PATH = `${__dirname}\\تجربة.قتام`;
+  const PATH = path.join(__dirname, './تجربة.قتام');
   await writeFile(PATH, code);
-  const process = spawn('قتام', [PATH]);
+  const process = spawn(path.join(__dirname, '../../target/release/قتام.exe'), [
+    PATH,
+    '--الدوال-المستبعدة=المدخلات،البيئة،أدخل،أنشئ،أنشئ_مجلد،إفتح،إقرأ،إقرأ_مجلد،إكتب،إنقل،إحذف،إحذف_مجلد',
+  ]);
   const output = { stdout: '', stderr: '' };
 
   setTimeout(async () => {

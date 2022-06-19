@@ -35,6 +35,23 @@ fn main() {
                 println!("{}", include_str!("../help.md"));
             }
             _ => {
+                if let Some(arg) = args.next() {
+                    if arg.as_str().starts_with("--الدوال-المستبعدة=") {
+                        let excluded = arg
+                            .as_str()
+                            .split("=")
+                            .nth(1)
+                            .unwrap()
+                            .split("،")
+                            .map(|s| s.to_string())
+                            .collect::<Vec<_>>();
+                        if let Err(err) = vm.exclude_natives(excluded) {
+                            eprintln!("{err}");
+                            process::exit(exitcode::USAGE)
+                        }
+                    }
+                }
+
                 if run_file(&arg, &mut vm, &mut reporter).is_err() {
                     process::exit(exitcode::DATAERR);
                 }

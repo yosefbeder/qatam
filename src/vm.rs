@@ -35,6 +35,21 @@ impl Vm {
         vm
     }
 
+    /// Intended to be used before `run`ing
+    pub fn exclude_natives(&mut self, keys: Vec<String>) -> Result<(), String> {
+        for key in &keys {
+            if !self.globals.contains_key(key) {
+                return Err(format!("لا يوجد دالة مدمجة تسمى {key}"));
+            }
+        }
+
+        for key in keys {
+            self.globals.remove(&key);
+        }
+
+        Ok(())
+    }
+
     fn get_up_value(&self, idx: usize) -> Option<Rc<RefCell<UpValue>>> {
         self.open_up_values
             .iter()
