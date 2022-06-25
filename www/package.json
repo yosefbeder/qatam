@@ -1,12 +1,12 @@
 {
-  "name": "learning-express",
+  "name": "www",
   "version": "1.0.0",
-  "main": "src/app.js",
   "author": "yosefbeder",
   "license": "MIT",
-  "resolutions": {
+  "overrides": {
     "@codemirror/state": "0.20.1",
-    "@codemirror/language": "0.20.2"
+    "@codemirror/language": "0.20.2",
+    "@codemirror/view": "0.20.7"
   },
   "dependencies": {
     "@codemirror/basic-setup": "^0.20.0",
@@ -18,11 +18,14 @@
     "cm6-theme-nord": "^0.2.0",
     "cm6-theme-solarized-dark": "^0.2.0",
     "cm6-theme-solarized-light": "^0.2.0",
-    "codemirror-lang-qatam": "^0.1.0",
-    "express": "^4.18.1"
+    "codemirror-lang-qatam": "^0.1.0"
   },
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^13.3.0",
     "rollup": "^2.75.6"
+  },
+  "scripts": {
+    "build": "rollup -c",
+    "dev": "rollup -c -w"
   }
 }
