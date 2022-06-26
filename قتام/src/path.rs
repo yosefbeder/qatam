@@ -36,6 +36,8 @@ pub fn resolve_path(
                 path = (*path.absolutize().unwrap()).to_owned();
             }
         };
+    } else {
+        path = (*path.absolutize().unwrap()).to_owned();
     }
 
     if !path.is_file() {

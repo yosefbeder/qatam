@@ -21,16 +21,6 @@ body {
   padding: 1rem;
 }
 
-#output {
-  height: 300px;
-  padding: 1rem;
-  background-color: var(--color-slate-900);
-  border-radius: 0.25rem;
-  line-height: 1.5;
-  color: var(--color-slate-50);
-  overflow: scroll;
-}
-
 h1,
 h2 {
   color: var(--color-slate-900);
@@ -42,27 +32,44 @@ li {
   color: var(--color-slate-700);
 }
 
+pre > code {
+  display: block;
+  height: 300px;
+  padding: 1rem;
+  background-color: var(--color-slate-900);
+  border-radius: 0.25rem;
+  font-family: Consolas, monaco, monospace;
+  line-height: 1.5;
+  color: var(--color-slate-50);
+  overflow: scroll;
+}
+
 .github-corner:hover .octo-arm {
   animation: octocat-wave 560ms ease-in-out;
 }
+
 @keyframes octocat-wave {
   0%,
   100% {
     transform: rotate(0);
   }
+
   20%,
   60% {
     transform: rotate(-25deg);
   }
+
   40%,
   80% {
     transform: rotate(10deg);
   }
 }
+
 @media (max-width: 500px) {
   .github-corner:hover .octo-arm {
     animation: none;
   }
+
   .github-corner .octo-arm {
     animation: octocat-wave 560ms ease-in-out;
   }

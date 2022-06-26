@@ -16,15 +16,17 @@ pub struct Vm {
     globals: HashMap<String, Value>,
     open_up_values: Vec<Rc<RefCell<UpValue>>>,
     created_at: SystemTime,
+    untrusted: bool,
 }
 
 impl Vm {
-    pub fn new() -> Self {
+    pub fn new(untrusted: bool) -> Self {
         let mut vm = Self {
             stack: Vec::new(),
             globals: HashMap::new(),
             open_up_values: Vec::new(),
             created_at: SystemTime::now(),
+            untrusted,
         };
 
         NATIVES.iter().for_each(|(name, native)| {
@@ -33,21 +35,6 @@ impl Vm {
         });
 
         vm
-    }
-
-    /// Intended to be used before `run`ing
-    pub fn exclude_natives(&mut self, keys: Vec<String>) -> Result<(), String> {
-        for key in &keys {
-            if !self.globals.contains_key(key) {
-                return Err(format!("لا يوجد دالة مدمجة تسمى {key}"));
-            }
-        }
-
-        for key in keys {
-            self.globals.remove(&key);
-        }
-
-        Ok(())
     }
 
     fn get_up_value(&self, idx: usize) -> Option<Rc<RefCell<UpValue>>> {
@@ -83,29 +70,6 @@ impl Vm {
             }
         }
         self.open_up_values = new;
-    }
-
-    pub fn check_arity(arity: Arity, argc: usize) -> Result<(), Value> {
-        match arity {
-            Arity::Fixed(arity) => {
-                if argc != arity as usize {
-                    Err(Value::new_string(format!(
-                        "توقعت عدد {arity} من المدخلات ولكن حصلت على {argc} بدلاً من ذللك"
-                    )))
-                } else {
-                    Ok(())
-                }
-            }
-            Arity::Variadic(arity) => {
-                if argc < arity as usize {
-                    Err(Value::new_string(format!(
-                        "توقعت على الأقل عدد {arity} من المدخلات ولكن حصلت على {argc} بدلاً من ذلك"
-                    )))
-                } else {
-                    Ok(())
-                }
-            }
-        }
     }
 
     pub fn run(&mut self, function: Function, reporter: &mut dyn Reporter) -> Result<(), ()> {
@@ -378,6 +342,39 @@ impl<'a, 'b> Frame<'a, 'b> {
     }
 
     //>> Native functions utilities
+    pub fn check_arity(arity: Arity, argc: usize) -> Result<(), Value> {
+        match arity {
+            Arity::Fixed(arity) => {
+                if argc != arity as usize {
+                    Err(Value::new_string(format!(
+                        "توقعت عدد {arity} من المدخلات ولكن حصلت على {argc} بدلاً من ذللك"
+                    )))
+                } else {
+                    Ok(())
+                }
+            }
+            Arity::Variadic(arity) => {
+                if argc < arity as usize {
+                    Err(Value::new_string(format!(
+                        "توقعت على الأقل عدد {arity} من المدخلات ولكن حصلت على {argc} بدلاً من ذلك"
+                    )))
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    pub fn check_trust(&self) -> Result<(), Value> {
+        if self.get_state().untrusted {
+            Err(Value::new_string(
+                "لا يمكن تشغيل هذه الدالة على وضع عدم الثقة".to_string(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn nth(&self, idx: usize) -> &Value {
         self.get(self.get_slots() + idx)
     }
@@ -816,7 +813,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let enclosing_closure = self.get_closure().clone();
                     let mut frame = match self.get_state().stack[idx].clone() {
                         Value::Object(Object::Closure(closure)) => {
-                            Vm::check_arity(closure.get_arity(), argc)
+                            Self::check_arity(closure.get_arity(), argc)
                                 .map_err(|value| self.string_to_err(value.to_string()))?;
                             Frame::new_closure(
                                 self.get_state_mut(),
