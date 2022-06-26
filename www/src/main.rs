@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate rocket;
 use rocket::{
-    fs::{relative, FileServer},
+    fs::FileServer,
     serde::{json::Json, Deserialize, Serialize},
 };
 use std::{fs, io::prelude::*, time::Duration};
@@ -21,15 +21,15 @@ struct Res {
 
 #[post("/execute", format = "json", data = "<req>")]
 fn execute(req: Json<Req>) -> Json<Res> {
-    let path = relative!("src/تجربة.قتام");
+    let path = "تجربة.قتام";
     let mut file = fs::OpenOptions::new()
-        .create_new(true)
+        .create(true)
         .write(true)
         .open(path)
         .unwrap();
     file.write_all(req.code.as_bytes()).unwrap();
     let mut p = Popen::create(
-        &[relative!("../target/release/قتام.exe"), "src/تجربة.قتام"],
+        &["target/release/قتام", path],
         PopenConfig {
             stdout: Redirection::Pipe,
             stderr: Redirection::Pipe,
@@ -74,5 +74,5 @@ fn execute(req: Json<Req>) -> Json<Res> {
 fn rocket() -> _ {
     rocket::build()
         .mount("/", routes![execute])
-        .mount("/", FileServer::from(relative!("public")))
+        .mount("/", FileServer::from("www/public"))
 }
