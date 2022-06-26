@@ -5,10 +5,13 @@ use std::{
 };
 
 pub fn qatam_path(path: &Path) -> Result<(), String> {
-    if path.extension() == Some(OsStr::new("قتام")) {
-        return Ok(());
+    if path.extension() != Some(OsStr::new("قتام")) {
+        return Err("يجب أن يكون امتداد الملف \"قتام\"".to_string());
     }
-    Err("يجب أن يكون امتداد الملف \"قتام\"".to_string())
+    if !path.is_file() {
+        return Err("لا يوجد ملف بهذا المسار".to_string());
+    }
+    Ok(())
 }
 
 /// note: the path is expected to be absolute
@@ -38,10 +41,6 @@ pub fn resolve_path(
         };
     } else {
         path = (*path.absolutize().unwrap()).to_owned();
-    }
-
-    if !path.is_file() {
-        return Err("لا يوجد ملف بهذا المسار".to_string());
     }
 
     pred(&path)?;
