@@ -19,7 +19,7 @@ pub fn as_string(frame: &Frame, argc: usize) -> Result<Value, Value> {
     Ok(Value::new_string(arg.to_string()))
 }
 
-pub fn as_char(frame: &Frame, argc: usize) -> Result<Value, Value> {
+pub fn as_unicode(frame: &Frame, argc: usize) -> Result<Value, Value> {
     Frame::check_arity(Arity::Fixed(1), argc)?;
     let arg = frame.nth_u32(1)?;
     match std::char::from_u32(arg as u32) {
@@ -30,20 +30,36 @@ pub fn as_char(frame: &Frame, argc: usize) -> Result<Value, Value> {
     }
 }
 
-pub fn as_number(frame: &Frame, argc: usize) -> Result<Value, Value> {
+pub fn as_unicode_number(frame: &Frame, argc: usize) -> Result<Value, Value> {
     Frame::check_arity(Arity::Fixed(1), argc)?;
     let arg = frame.nth_char(1)?;
     let n: u32 = arg.into();
     Ok(Value::Number(n as f64))
 }
 
-pub fn parse_number(frame: &Frame, argc: usize) -> Result<Value, Value> {
+pub fn as_number(frame: &Frame, argc: usize) -> Result<Value, Value> {
     Frame::check_arity(Arity::Fixed(1), argc)?;
     let arg = frame.nth_string(1)?;
     let n: f64 = arg
         .parse()
-        .map_err(|_| Value::new_string(format!("{} ليس رقم", arg)))?;
+        .map_err(|_| Value::new_string(format!("{} ليس عدداً", arg)))?;
     Ok(Value::Number(n))
+}
+
+pub fn as_int(frame: &Frame, argc: usize) -> Result<Value, Value> {
+    Frame::check_arity(Arity::Fixed(1), argc)?;
+    match frame.nth(1) {
+        Value::Object(Object::String(string)) => {
+            let n: u32 = string
+                .parse()
+                .map_err(|_| Value::new_string(format!("{} ليس عدداً صحيحاً", string)))?;
+            Ok(Value::Number(n as f64))
+        }
+        Value::Number(n) => Ok(Value::Number(n.trunc() as f64)),
+        _ => Err(Value::new_string(
+            "يجب أن يكون المدخل عدداً أو نصاً".to_string(),
+        )),
+    }
 }
 
 pub fn typ(frame: &Frame, argc: usize) -> Result<Value, Value> {
@@ -326,11 +342,12 @@ pub fn delete_folder(frame: &Frame, argc: usize) -> Result<Value, Value> {
     }
 }
 
-pub const NATIVES: [(&'static str, Native); 33] = [
+pub const NATIVES: [(&'static str, Native); 34] = [
     ("كنص", as_string),
-    ("كحرف", as_char),
+    ("كيونيكود", as_unicode),
+    ("كعدد_يونيكود", as_unicode_number),
     ("كعدد", as_number),
-    ("حلل_عدد", parse_number),
+    ("كصحيح", as_int),
     ("نوع", typ),
     ("حجم", size),
     ("خصائص", props),
