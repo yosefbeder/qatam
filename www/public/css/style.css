@@ -9,68 +9,66 @@
   --color-slate-700: #334155;
   --color-slate-800: #1e293b;
   --color-slate-900: #0f172a;
+
+  --color-blue-50: #eff6ff;
+  --color-blue-100: #dbeafe;
+  --color-blue-200: #bfdbfe;
+  --color-blue-300: #93c5fd;
+  --color-blue-400: #60a5fa;
+  --color-blue-500: #3b82f6;
+  --color-blue-600: #2563eb;
+  --color-blue-700: #1d4ed8;
+  --color-blue-800: #1e40af;
+  --color-blue-900: #1e3a8a;
+}
+
+html {
+  direction: rtl;
 }
 
 body {
   background-color: var(--color-slate-50);
-}
-
-#app {
   max-width: 768px;
   margin: 0 auto;
   padding: 1rem;
 }
 
 h1,
-h2 {
+h2,
+h3 {
   color: var(--color-slate-900);
 }
 
 p,
 li {
-  line-height: 1.5;
   color: var(--color-slate-700);
+  line-height: 1.5;
+}
+
+li > p {
+  line-height: 0.5;
+}
+
+a,
+a:link,
+a:visited {
+  color: var(--color-blue-500);
+  text-decoration-line: underline !important; /* So that it works on Edge! */
+}
+
+a:hover {
+  color: var(--color-blue-600);
+}
+
+a:active {
+  color: var(--color-blue-700);
 }
 
 pre > code {
   display: block;
-  height: 300px;
-  padding: 1rem;
-  background-color: var(--color-slate-900);
+  padding: 0.5rem;
+  background-color: var(--color-slate-100);
   border-radius: 0.25rem;
-  font-family: Consolas, monaco, monospace;
   line-height: 1.5;
-  color: var(--color-slate-50);
-  overflow: scroll;
-}
-
-.github-corner:hover .octo-arm {
-  animation: octocat-wave 560ms ease-in-out;
-}
-
-@keyframes octocat-wave {
-  0%,
-  100% {
-    transform: rotate(0);
-  }
-
-  20%,
-  60% {
-    transform: rotate(-25deg);
-  }
-
-  40%,
-  80% {
-    transform: rotate(10deg);
-  }
-}
-
-@media (max-width: 500px) {
-  .github-corner:hover .octo-arm {
-    animation: none;
-  }
-
-  .github-corner .octo-arm {
-    animation: octocat-wave 560ms ease-in-out;
-  }
+  color: var(--color-slate-900);
 }
