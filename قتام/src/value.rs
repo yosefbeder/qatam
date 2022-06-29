@@ -1,8 +1,5 @@
 use super::{chunk::Chunk, vm::Frame};
-use std::{
-    cell::RefCell, cmp, collections::HashMap, convert::From, fmt, fs::File, ops, path::PathBuf,
-    rc::Rc,
-};
+use std::{cell::RefCell, cmp, collections::HashMap, convert::From, fmt, fs::File, ops, rc::Rc};
 
 #[derive(Clone, Copy)]
 pub enum Arity {
@@ -14,7 +11,6 @@ pub struct Function {
     name: Option<String>,
     chunk: Chunk,
     arity: Arity,
-    path: Option<PathBuf>,
 }
 
 impl fmt::Debug for Function {
@@ -44,16 +40,8 @@ impl fmt::Display for Function {
 }
 
 impl Function {
-    pub fn new(name: Option<String>, chunk: Chunk, arity: Arity, path: Option<PathBuf>) -> Self {
-        Self {
-            name,
-            chunk,
-            arity,
-            path: match path {
-                Some(path) => Some(path.to_owned()),
-                None => None,
-            },
-        }
+    pub fn new(name: Option<String>, chunk: Chunk, arity: Arity) -> Self {
+        Self { name, chunk, arity }
     }
 }
 
@@ -110,10 +98,6 @@ impl Closure {
 
     pub fn get_arity(&self) -> Arity {
         self.function.arity
-    }
-
-    pub fn get_path(&self) -> &Option<PathBuf> {
-        &self.function.path
     }
 
     pub fn get_up_values(&self) -> &Vec<Rc<RefCell<UpValue>>> {

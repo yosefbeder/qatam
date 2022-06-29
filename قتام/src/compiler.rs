@@ -1008,7 +1008,6 @@ impl<'a> Compiler<'a> {
                 self.name.clone(),
                 self.chunk.clone(),
                 Arity::Fixed(self.arity),
-                self.path.clone(),
             ))
         }
     }

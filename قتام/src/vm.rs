@@ -167,7 +167,6 @@ pub enum Frame<'a, 'b> {
         state: &'a mut Vm,
         native: Native,
         slots: usize,
-        path: Option<PathBuf>,
     },
 }
 
@@ -188,12 +187,11 @@ impl<'a, 'b> Frame<'a, 'b> {
         }
     }
 
-    fn new_native(state: &'a mut Vm, native: Native, slots: usize, path: Option<PathBuf>) -> Self {
+    fn new_native(state: &'a mut Vm, native: Native, slots: usize) -> Self {
         Self::Native {
             state,
             native,
             slots,
-            path,
         }
     }
 
@@ -267,13 +265,6 @@ impl<'a, 'b> Frame<'a, 'b> {
         match self {
             Self::Closure { slots, .. } => *slots,
             Self::Native { slots, .. } => *slots,
-        }
-    }
-
-    fn get_path(&self) -> &Option<PathBuf> {
-        match self {
-            Self::Closure { closure, .. } => closure.get_path(),
-            Self::Native { path, .. } => path,
         }
     }
 
@@ -457,8 +448,7 @@ impl<'a, 'b> Frame<'a, 'b> {
 
     pub fn nth_path(&self, idx: usize) -> Result<PathBuf, Value> {
         if let Value::Object(Object::String(string)) = self.nth(idx) {
-            resolve_path(self.get_path().clone(), &string, |_| Ok(()))
-                .map_err(|string| string.into())
+            resolve_path(None, &string, |_| Ok(())).map_err(|string| string.into())
         } else {
             Err(format!("يجب أن يكون المدخل {idx} مسار").into())
         }
@@ -823,9 +813,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                             )
                         }
                         Value::Object(Object::Native(native)) => {
-                            let path = self.get_path().clone();
-
-                            Frame::new_native(self.get_state_mut(), native, idx, path)
+                            Frame::new_native(self.get_state_mut(), native, idx)
                         }
                         _ => todo!(),
                     };
