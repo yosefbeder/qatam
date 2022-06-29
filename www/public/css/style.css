@@ -71,4 +71,5 @@ pre > code {
   border-radius: 0.25rem;
   line-height: 1.5;
   color: var(--color-slate-900);
+  overflow-x: scroll;
 }
