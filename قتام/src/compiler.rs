@@ -618,6 +618,24 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn lambda(
+        &mut self,
+        params: &Vec<Rc<Token>>,
+        body: &Box<Stml>,
+        reporter: &mut dyn Reporter,
+    ) -> Result<(), ()> {
+        let mut compiler =
+            Compiler::new_function(None, body, Rc::clone(&self.state), self.path.clone());
+        compiler.define_variable(Rc::new(Token::new_empty()), reporter)?;
+        compiler.define_params(params, reporter)?;
+        self.chunk.write_closure(
+            compiler.compile(reporter)?,
+            &compiler.state.borrow().up_values,
+            None,
+        )?;
+        Ok(())
+    }
+
     pub fn expr(&mut self, expr: &Expr, reporter: &mut dyn Reporter) -> Result<(), ()> {
         match expr {
             Expr::Variable(token) => self.get_variable(Rc::clone(token))?,
@@ -633,6 +651,7 @@ impl<'a> Compiler<'a> {
             Expr::Call(token, callee, args) => {
                 self.call(Rc::clone(&token), callee, args, reporter)?
             }
+            Expr::Lambda(params, body) => self.lambda(params, body, reporter)?,
         };
         Ok(())
     }
@@ -676,9 +695,9 @@ impl<'a> Compiler<'a> {
         self.chunk.write_closure(
             compiler.compile(reporter)?,
             &compiler.state.borrow().up_values,
-            Rc::clone(&name),
+            Some(Rc::clone(&name)),
         )?;
-        self.define_variable(Rc::clone(&name), reporter)?;
+        self.define_variable(name, reporter)?;
         Ok(())
     }
     fn var_decl(
@@ -891,7 +910,7 @@ impl<'a> Compiler<'a> {
         self.chunk.write_closure(
             compiler.compile(reporter)?,
             &compiler.state.borrow().up_values,
-            Rc::clone(&name),
+            Some(Rc::clone(&name)),
         )?;
         self.chunk.write_instr(Call, Some(Rc::clone(&name)));
         self.chunk.write_byte(0u8);

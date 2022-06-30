@@ -63,6 +63,7 @@ pub enum TokenType {
     Import,
     From,
     Export,
+    Pipe,
 
     Unknown,
     NewLine,
@@ -160,13 +161,14 @@ impl From<TokenType> for usize {
             TokenType::Import => 55,
             TokenType::From => 56,
             TokenType::Export => 57,
-            TokenType::Unknown => 58,
-            TokenType::EOF => 59,
+            TokenType::Pipe => 58,
+            TokenType::Unknown => 59,
+            TokenType::EOF => 60,
         }
     }
 }
 
-pub const NUMBER: usize = 60;
+pub const NUMBER: usize = 61;
 
 #[derive(Clone)]
 pub struct Token {

@@ -239,7 +239,7 @@ impl Tokenizer {
                         self.next();
                         self.pop_token(TokenType::Or)
                     } else {
-                        self.pop_unknown_token()
+                        self.pop_token(TokenType::Pipe)
                     }
                 }
                 '"' => {

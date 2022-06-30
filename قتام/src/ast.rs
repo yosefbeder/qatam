@@ -19,6 +19,7 @@ pub enum Expr {
     Call(Rc<Token>, Box<Expr>, Vec<Expr>),
     Get(Rc<Token>, Box<Expr>, Box<Expr>),
     Set(Rc<Token>, Box<Expr>, Box<Expr>, Box<Expr>),
+    Lambda(Vec<Rc<Token>>, Box<Stml>),
 }
 
 impl Expr {
@@ -27,6 +28,12 @@ impl Expr {
             Self::Variable(token) => token,
             _ => unreachable!(),
         }
+    }
+}
+
+fn fmt_as_block(buffer: &mut String, block: &Stml) {
+    for stml in block.as_block() {
+        *buffer += format!("{stml:?}").as_str();
     }
 }
 
@@ -64,6 +71,20 @@ impl fmt::Debug for Expr {
                 Self::Set(_, expr, key, right) => {
                     format!("(إجعل {:?} {:?} {:?})", expr, key, right)
                 }
+                Self::Lambda(params, body) => {
+                    let mut buffer = String::new();
+                    buffer += &format!(
+                        "<دالة ({})>\n",
+                        params
+                            .iter()
+                            .map(|p| p.lexeme.clone())
+                            .collect::<Vec<_>>()
+                            .join("، "),
+                    );
+                    fmt_as_block(&mut buffer, body);
+                    buffer += "<أنهي>\n";
+                    buffer
+                }
             }
         )
     }
@@ -97,12 +118,6 @@ impl Stml {
 
 impl fmt::Debug for Stml {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fn fmt_as_block(buffer: &mut String, block: &Stml) {
-            for stml in block.as_block() {
-                *buffer += format!("{stml:?}").as_str();
-            }
-        }
-
         write!(
             f,
             "{}",

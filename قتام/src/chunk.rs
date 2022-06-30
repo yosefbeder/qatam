@@ -378,11 +378,11 @@ impl Chunk {
         &mut self,
         function: Function,
         up_values: &[UpValue],
-        token: Rc<Token>,
+        token: Option<Rc<Token>>,
     ) -> Result<(), ()> {
-        self.write_const(Value::new_function(function), Some(Rc::clone(&token)))?;
+        self.write_const(Value::new_function(function), token.clone())?;
         //TODO consider not appending regular functions as closures optimization
-        self.write_instr(Closure, Some(token));
+        self.write_instr(Closure, token);
         self.write_byte(up_values.len() as u8); //TODO make sure this it's convertable to u8
         for up_value in up_values {
             self.write_byte(up_value.is_local as u8);

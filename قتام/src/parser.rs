@@ -210,6 +210,20 @@ impl Parser {
         return Ok(expr);
     }
 
+    fn lambda(&mut self, reporter: &mut dyn Reporter) -> Result<Expr, ()> {
+        if self.clone_previous().typ == TokenType::Or {
+            self.consume(TokenType::OBrace, "توقعت '{' بعد المعاملات", reporter)?;
+            let body = self.block(reporter)?;
+            Ok(Expr::Lambda(Vec::new(), Box::new(body)))
+        } else {
+            let params = self.params(reporter)?;
+            self.consume(TokenType::Pipe, "توقعت '|'", reporter)?;
+            self.consume(TokenType::OBrace, "توقعت '{' بعد المعاملات", reporter)?;
+            let body = self.block(reporter)?;
+            Ok(Expr::Lambda(params, Box::new(body)))
+        }
+    }
+
     /// Parses any expression with a binding power more than or equal to `min_bp`.
     fn expr(
         &mut self,
@@ -233,6 +247,10 @@ impl Parser {
             TokenType::OParen => {
                 can_assign = false;
                 self.group(reporter)?
+            }
+            TokenType::Pipe | TokenType::Or => {
+                can_assign = false;
+                self.lambda(reporter)?
             }
             _ => {
                 self.error_at(Phase::Parsing, &token, "توقعت عبارة", reporter);
@@ -398,9 +416,10 @@ impl Parser {
             self.consume(TokenType::Identifier, "توقعت اسم معامل", reporter)?;
             params.push(Rc::new(self.clone_previous()));
         }
+
         while self.check(TokenType::Comma) {
             self.advance(reporter)?;
-            if self.check(TokenType::CParen) {
+            if self.check(TokenType::CParen) || self.check(TokenType::Pipe) {
                 break;
             }
             self.consume(TokenType::Identifier, "توقعت اسم معامل", reporter)?;
