@@ -67,7 +67,7 @@ pub enum Stml {
     Return(Rc<Token>, Option<Expr>),
     Throw(Rc<Token>, Option<Expr>),
     TryCatch(Box<Stml>, Rc<Token>, Box<Stml>),
-    IfElse(Expr, Box<Stml>, Option<Box<Stml>>),
+    IfElse(Expr, Box<Stml>, Vec<(Expr, Stml)>, Option<Box<Stml>>),
     While(Expr, Box<Stml>),
     Loop(Box<Stml>),
     Break(Rc<Token>),
@@ -141,15 +141,18 @@ impl fmt::Debug for Stml {
                     buffer += "<أنهي>\n";
                     buffer
                 }
-                Stml::IfElse(expr, then_branch, else_branch) => {
+                Stml::IfElse(expr, if_body, elseifs, else_body) => {
                     let mut buffer = String::new();
                     buffer += format!("<إن {:?}>\n", expr).as_str();
-                    fmt_as_block(&mut buffer, then_branch);
-
-                    match else_branch {
-                        Some(else_branch) => {
+                    fmt_as_block(&mut buffer, if_body);
+                    for (expr, stml) in elseifs {
+                        buffer += format!("<وإن {:?}>\n", expr).as_str();
+                        fmt_as_block(&mut buffer, stml);
+                    }
+                    match else_body {
+                        Some(else_body) => {
                             buffer += "<إلا>\n";
-                            fmt_as_block(&mut buffer, else_branch);
+                            fmt_as_block(&mut buffer, else_body);
                         }
                         None => {}
                     }

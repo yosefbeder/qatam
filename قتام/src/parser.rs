@@ -477,6 +477,20 @@ impl Parser {
         self.consume(TokenType::CParen, "توقعت ')' بعد الشرط", reporter)?;
         self.consume(TokenType::OBrace, "توقعت '{' بعد الشرط", reporter)?;
         let if_body = self.block(reporter)?;
+
+        let mut elseifs = Vec::new();
+        while self.check(TokenType::ElseIf) {
+            self.advance(reporter)?;
+            self.consume(TokenType::OParen, "توقعت '(' قبل الشرط", reporter)?;
+            let condition = self.parse_expr(reporter)?;
+            self.consume(TokenType::CParen, "توقعت ')' بعد الشرط", reporter)?;
+
+            self.consume(TokenType::OBrace, "توقعت '{' إلا", reporter)?;
+            let body = self.block(reporter)?;
+
+            elseifs.push((condition, body));
+        }
+
         let else_body = if self.check(TokenType::Else) {
             self.advance(reporter)?;
             self.consume(TokenType::OBrace, "توقعت '{' إلا", reporter)?;
@@ -485,7 +499,12 @@ impl Parser {
             None
         };
 
-        Ok(Stml::IfElse(condition, Box::new(if_body), else_body))
+        Ok(Stml::IfElse(
+            condition,
+            Box::new(if_body),
+            elseifs,
+            else_body,
+        ))
     }
 
     fn var_decl(&mut self, reporter: &mut dyn Reporter) -> Result<Stml, ()> {

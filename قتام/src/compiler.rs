@@ -732,24 +732,37 @@ impl<'a> Compiler<'a> {
     fn if_else_stml(
         &mut self,
         condition: &Expr,
-        then_branch: &Box<Stml>,
-        else_branch: &Option<Box<Stml>>,
+        if_body: &Box<Stml>,
+        elseifs: &Vec<(Expr, Stml)>,
+        else_body: &Option<Box<Stml>>,
         reporter: &mut dyn Reporter,
     ) -> Result<(), ()> {
         self.expr(condition, reporter)?;
         let false_jump = self.chunk.write_jump(JumpIfFalse, None);
         self.chunk.write_instr(Pop, None);
-        self.stml(then_branch, reporter)?;
-        let true_jump = self.chunk.write_jump(Jump, None);
+        self.stml(if_body, reporter)?;
+        let mut true_jumps = vec![self.chunk.write_jump(Jump, None)];
         self.chunk.rewrite_jump(false_jump);
         self.chunk.write_instr(Pop, None);
-        match else_branch {
+        let mut iter = elseifs.iter();
+        while let Some((condition, body)) = iter.next() {
+            self.expr(condition, reporter)?;
+            let false_jump = self.chunk.write_jump(JumpIfFalse, None);
+            self.chunk.write_instr(Pop, None);
+            self.stml(body, reporter)?;
+            true_jumps.push(self.chunk.write_jump(Jump, None));
+            self.chunk.rewrite_jump(false_jump);
+            self.chunk.write_instr(Pop, None);
+        }
+        match else_body {
             Some(stml) => {
                 self.stml(stml, reporter)?;
             }
             None => {}
         }
-        self.chunk.rewrite_jump(true_jump);
+        for jump in true_jumps {
+            self.chunk.rewrite_jump(jump)
+        }
         Ok(())
     }
 
@@ -939,8 +952,8 @@ impl<'a> Compiler<'a> {
                 }
                 self.end_scope();
             }
-            Stml::IfElse(condition, then_branch, else_branch) => {
-                self.if_else_stml(condition, then_branch, else_branch, reporter)?
+            Stml::IfElse(condition, if_body, elseifs, else_body) => {
+                self.if_else_stml(condition, if_body, elseifs, else_body, reporter)?
             }
             Stml::While(condition, body) => self.while_stml(condition, body, reporter)?,
             Stml::Loop(body) => self.loop_stml(body, reporter)?,
