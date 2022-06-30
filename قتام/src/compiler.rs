@@ -300,19 +300,21 @@ impl<'a> Compiler<'a> {
             return Ok(());
         }
 
-        let locals = &self.state.borrow().locals.clone();
-        let mut iter = locals.iter().rev();
-        while let Some(local) = iter.next() {
-            if local.depth != scope_depth {
-                break;
-            }
-            if local.name == token {
-                self.error_at(
-                    token,
-                    "لا يمكنك تعريف نفس المتغير أكثر من مرة في نفس المجموعة",
-                    reporter,
-                );
-                return Err(());
+        if token.lexeme.as_str() != "_" {
+            let locals = &self.state.borrow().locals.clone();
+            let mut iter = locals.iter().rev();
+            while let Some(local) = iter.next() {
+                if local.depth != scope_depth {
+                    break;
+                }
+                if local.name == token {
+                    self.error_at(
+                        token,
+                        "لا يمكنك تعريف نفس المتغير أكثر من مرة في نفس المجموعة",
+                        reporter,
+                    );
+                    return Err(());
+                }
             }
         }
 
