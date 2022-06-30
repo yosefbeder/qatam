@@ -21,6 +21,15 @@ pub enum Expr {
     Set(Rc<Token>, Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
+impl Expr {
+    pub fn as_variable(&self) -> &Rc<Token> {
+        match self {
+            Self::Variable(token) => token,
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(

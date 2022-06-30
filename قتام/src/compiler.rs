@@ -463,15 +463,29 @@ impl<'a> Compiler<'a> {
         right: &Expr,
         reporter: &mut dyn Reporter,
     ) -> Result<(), ()> {
-        if op.typ == TokenType::Equal {
-            match left {
-                Expr::Variable(token) => {
-                    self.expr(right, reporter)?;
-                    self.set_variable(Rc::clone(token))?;
-                }
-                _ => unreachable!(),
+        macro_rules! set_and {
+            ($instr:ident) => {{
+                let token = left.as_variable();
+                self.get_variable(token.clone())?;
+                self.expr(right, reporter)?;
+                self.chunk.write_instr($instr, Some(op));
+                self.set_variable(token.clone())?;
+                return Ok(());
+            }};
+        }
+
+        match op.typ {
+            TokenType::Equal => {
+                self.expr(right, reporter)?;
+                self.set_variable(left.as_variable().clone())?;
+                return Ok(());
             }
-            return Ok(());
+            TokenType::PlusEqual => set_and!(Add),
+            TokenType::MinusEqual => set_and!(Subtract),
+            TokenType::StarEqual => set_and!(Multiply),
+            TokenType::SlashEqual => set_and!(Divide),
+            TokenType::PercentEqual => set_and!(Remainder),
+            _ => {}
         }
 
         self.expr(left, reporter)?;
@@ -557,7 +571,25 @@ impl<'a> Compiler<'a> {
         value: &Expr,
         reporter: &mut dyn Reporter,
     ) -> Result<(), ()> {
+        macro_rules! get_and {
+            ($instr:ident) => {{
+                self.expr(instance, reporter)?;
+                self.expr(key, reporter)?;
+                self.chunk.write_instr(Get, Some(Rc::clone(&token)));
+                self.chunk.write_instr($instr, Some(Rc::clone(&token)));
+            }};
+        }
+
         self.expr(value, reporter)?;
+        match token.typ {
+            TokenType::PlusEqual => get_and!(Add),
+            TokenType::MinusEqual => get_and!(Subtract),
+            TokenType::StarEqual => get_and!(Multiply),
+            TokenType::SlashEqual => get_and!(Divide),
+            TokenType::PercentEqual => get_and!(Remainder),
+            _ => {}
+        }
+
         self.expr(instance, reporter)?;
         self.expr(key, reporter)?;
         self.chunk.write_instr(Set, Some(Rc::clone(&token)));

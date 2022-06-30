@@ -145,11 +145,52 @@ impl Tokenizer {
                 '[' => self.pop_token(TokenType::OBracket),
                 ']' => self.pop_token(TokenType::CBracket),
                 '.' => self.pop_token(TokenType::Period),
-                '+' => self.pop_token(TokenType::Plus),
-                '-' => self.pop_token(TokenType::Minus),
-                '*' => self.pop_token(TokenType::Star),
-                '/' => self.pop_token(TokenType::Slash),
-                '%' => self.pop_token(TokenType::Percent),
+                '+' => {
+                    if self.check('=') {
+                        self.next();
+                        self.pop_token(TokenType::PlusEqual)
+                    } else if self.check('+') {
+                        self.next();
+                        self.pop_token(TokenType::DPlus)
+                    } else {
+                        self.pop_token(TokenType::Plus)
+                    }
+                }
+                '-' => {
+                    if self.check('=') {
+                        self.next();
+                        self.pop_token(TokenType::MinusEqual)
+                    } else if self.check('-') {
+                        self.next();
+                        self.pop_token(TokenType::DMinus)
+                    } else {
+                        self.pop_token(TokenType::Minus)
+                    }
+                }
+                '*' => {
+                    if self.check('=') {
+                        self.next();
+                        self.pop_token(TokenType::StarEqual)
+                    } else {
+                        self.pop_token(TokenType::Star)
+                    }
+                }
+                '/' => {
+                    if self.check('=') {
+                        self.next();
+                        self.pop_token(TokenType::SlashEqual)
+                    } else {
+                        self.pop_token(TokenType::Slash)
+                    }
+                }
+                '%' => {
+                    if self.check('=') {
+                        self.next();
+                        self.pop_token(TokenType::PercentEqual)
+                    } else {
+                        self.pop_token(TokenType::Percent)
+                    }
+                }
                 '،' => self.pop_token(TokenType::Comma),
                 '؟' => self.pop_token(TokenType::QuestionMark),
                 ':' => self.pop_token(TokenType::Colon),

@@ -24,22 +24,22 @@ pub const OPERATORS: [(Option<u8>, Option<u8>, Option<u8>, Option<Associativity>
     (None, None, None, None),                            // 14
     (None, None, None, None),                            // 15
     (None, Some(9), None, Some(Associativity::Right)),   // 16
-    (None, Some(6), None, Some(Associativity::Left)),    // 17
-    (Some(2), None, None, None),                         // 18
-    (None, Some(6), None, Some(Associativity::Left)),    // 19
-    (None, Some(5), None, Some(Associativity::Left)),    // 20
-    (None, Some(5), None, Some(Associativity::Left)),    // 21
-    (None, Some(5), None, Some(Associativity::Left)),    // 22
-    (None, Some(5), None, Some(Associativity::Left)),    // 23
-    (None, Some(7), None, Some(Associativity::Left)),    // 24
-    (None, Some(8), None, Some(Associativity::Left)),    // 25
-    (None, None, None, None),                            // 26
-    (None, None, None, None),                            // 27
-    (None, None, None, None),                            // 28
-    (None, None, None, None),                            // 29
-    (None, None, None, None),                            // 30
-    (None, None, None, None),                            // 31
-    (None, None, None, None),                            // 32
+    (None, Some(9), None, Some(Associativity::Right)),   // 17
+    (None, Some(9), None, Some(Associativity::Right)),   // 18
+    (None, Some(9), None, Some(Associativity::Right)),   // 19
+    (None, Some(9), None, Some(Associativity::Right)),   // 20
+    (None, Some(9), None, Some(Associativity::Right)),   // 21
+    (None, None, Some(1), None),                         // 22
+    (None, None, Some(1), None),                         // 23
+    (None, Some(6), None, Some(Associativity::Left)),    // 24
+    (Some(2), None, None, None),                         // 25
+    (None, Some(6), None, Some(Associativity::Left)),    // 26
+    (None, Some(5), None, Some(Associativity::Left)),    // 27
+    (None, Some(5), None, Some(Associativity::Left)),    // 28
+    (None, Some(5), None, Some(Associativity::Left)),    // 29
+    (None, Some(5), None, Some(Associativity::Left)),    // 30
+    (None, Some(7), None, Some(Associativity::Left)),    // 31
+    (None, Some(8), None, Some(Associativity::Left)),    // 32
     (None, None, None, None),                            // 33
     (None, None, None, None),                            // 34
     (None, None, None, None),                            // 35
@@ -60,4 +60,11 @@ pub const OPERATORS: [(Option<u8>, Option<u8>, Option<u8>, Option<Associativity>
     (None, None, None, None),                            // 50
     (None, None, None, None),                            // 51
     (None, None, None, None),                            // 52
+    (None, None, None, None),                            // 53
+    (None, None, None, None),                            // 54
+    (None, None, None, None),                            // 55
+    (None, None, None, None),                            // 56
+    (None, None, None, None),                            // 57
+    (None, None, None, None),                            // 58
+    (None, None, None, None),                            // 59
 ];

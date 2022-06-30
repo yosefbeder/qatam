@@ -19,6 +19,14 @@ pub enum TokenType {
     Colon,
 
     Equal,
+    PlusEqual,
+    MinusEqual,
+    StarEqual,
+    SlashEqual,
+    PercentEqual,
+    DPlus,
+    DMinus,
+
     DEqual,
     Bang,
     BangEqual,
@@ -77,6 +85,15 @@ pub const BOUNDARIES: [TokenType; 13] = [
     TokenType::Export,
 ];
 
+pub const BINARY_SET: [TokenType; 6] = [
+    TokenType::Equal,
+    TokenType::PlusEqual,
+    TokenType::MinusEqual,
+    TokenType::StarEqual,
+    TokenType::SlashEqual,
+    TokenType::PercentEqual,
+];
+
 impl From<TokenType> for usize {
     fn from(typ: TokenType) -> usize {
         match typ {
@@ -98,50 +115,58 @@ impl From<TokenType> for usize {
             TokenType::Colon => 15,
 
             TokenType::Equal => 16,
-            TokenType::DEqual => 17,
-            TokenType::Bang => 18,
-            TokenType::BangEqual => 19,
-            TokenType::Greater => 20,
-            TokenType::GreaterEqual => 21,
-            TokenType::Less => 22,
-            TokenType::LessEqual => 23,
-            TokenType::And => 24,
-            TokenType::Or => 25,
+            TokenType::PlusEqual => 17,
+            TokenType::MinusEqual => 18,
+            TokenType::StarEqual => 19,
+            TokenType::SlashEqual => 20,
+            TokenType::PercentEqual => 21,
+            TokenType::DPlus => 22,
+            TokenType::DMinus => 23,
 
-            TokenType::String => 26,
-            TokenType::UnTermedString => 27,
-            TokenType::Comment => 28,
+            TokenType::DEqual => 24,
+            TokenType::Bang => 25,
+            TokenType::BangEqual => 26,
+            TokenType::Greater => 27,
+            TokenType::GreaterEqual => 28,
+            TokenType::Less => 29,
+            TokenType::LessEqual => 30,
+            TokenType::And => 31,
+            TokenType::Or => 32,
 
-            TokenType::Identifier => 29,
-            TokenType::If => 30,
-            TokenType::ElseIf => 31,
-            TokenType::Else => 32,
-            TokenType::Function => 33,
-            TokenType::Var => 34,
-            TokenType::Loop => 35,
-            TokenType::While => 36,
-            TokenType::Break => 37,
-            TokenType::Continue => 38,
-            TokenType::Return => 39,
-            TokenType::Throw => 40,
-            TokenType::Try => 41,
-            TokenType::Catch => 42,
-            TokenType::Nil => 43,
-            TokenType::True => 44,
-            TokenType::False => 45,
-            TokenType::Number => 46,
-            TokenType::InvalidNumber => 47,
+            TokenType::String => 33,
+            TokenType::UnTermedString => 34,
+            TokenType::Comment => 35,
 
-            TokenType::Import => 48,
-            TokenType::From => 49,
-            TokenType::Export => 50,
-            TokenType::Unknown => 51,
-            TokenType::EOF => 52,
+            TokenType::Identifier => 36,
+            TokenType::If => 37,
+            TokenType::ElseIf => 38,
+            TokenType::Else => 39,
+            TokenType::Function => 40,
+            TokenType::Var => 41,
+            TokenType::Loop => 42,
+            TokenType::While => 43,
+            TokenType::Break => 44,
+            TokenType::Continue => 45,
+            TokenType::Return => 46,
+            TokenType::Throw => 47,
+            TokenType::Try => 48,
+            TokenType::Catch => 49,
+            TokenType::Nil => 50,
+            TokenType::True => 51,
+            TokenType::False => 52,
+            TokenType::Number => 53,
+            TokenType::InvalidNumber => 54,
+
+            TokenType::Import => 55,
+            TokenType::From => 56,
+            TokenType::Export => 57,
+            TokenType::Unknown => 58,
+            TokenType::EOF => 59,
         }
     }
 }
 
-pub const NUMBER: usize = 53;
+pub const NUMBER: usize = 60;
 
 #[derive(Clone)]
 pub struct Token {

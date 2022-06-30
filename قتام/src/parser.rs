@@ -2,7 +2,7 @@ use super::{
     ast::{Expr, Literal, Stml},
     operators::{Associativity, OPERATORS},
     reporter::{Phase, Report, Reporter},
-    token::{Token, TokenType, BOUNDARIES},
+    token::{Token, TokenType, BINARY_SET, BOUNDARIES},
     tokenizer::Tokenizer,
 };
 use std::{path::PathBuf, rc::Rc};
@@ -296,7 +296,7 @@ impl Parser {
                         self.consume(TokenType::Identifier, "توقعت اسم الخاصية", reporter)?;
                         let key = Expr::Literal(Literal::String(Rc::new(self.clone_previous())));
 
-                        if self.check(TokenType::Equal) {
+                        if BINARY_SET.contains(&self.peek(true).typ) {
                             token = self.next(reporter)?;
                             if !can_assign {
                                 self.error_at(
@@ -320,7 +320,7 @@ impl Parser {
                     TokenType::OBracket => {
                         let key = self.parse_expr(reporter)?;
                         self.consume(TokenType::CBracket, "توقعت ']' بعد العبارة", reporter)?;
-                        if self.check(TokenType::Equal) {
+                        if BINARY_SET.contains(&self.peek(true).typ) {
                             let row: usize = self.peek(true).typ.into();
                             let infix_precedence = OPERATORS[row].1.unwrap();
                             token = self.next(reporter)?;
@@ -343,7 +343,7 @@ impl Parser {
                             expr = Expr::Get(Rc::new(token), Box::new(expr), Box::new(key));
                         }
                     }
-                    //TODO<<
+                    //<<
                     _ => unreachable!(),
                 }
             } else {
