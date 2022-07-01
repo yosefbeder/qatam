@@ -74,7 +74,6 @@ pub fn size(frame: &Frame, argc: usize) -> Result<Value, Value> {
     Ok(Value::Number(match arg {
         Value::Object(Object::List(items)) => items.borrow().len(),
         Value::Object(Object::String(string)) => string.chars().count(),
-        Value::Object(Object::Object(items)) => items.borrow().len(),
         _ => {
             return Err(Value::new_string(
                 "يجب أن يكون المدخل قائمةً أو كائناً أو نصاً".to_string(),
