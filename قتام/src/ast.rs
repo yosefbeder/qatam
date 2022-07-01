@@ -8,7 +8,7 @@ pub enum Literal {
     Bool(Rc<Token>),
     Nil(Rc<Token>),
     List(Vec<Expr>),
-    Object(Vec<(Rc<Token>, Expr)>),
+    Object(Vec<(Rc<Token>, Option<Expr>)>),
 }
 
 pub enum Expr {

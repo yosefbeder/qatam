@@ -154,12 +154,18 @@ impl Parser {
         Ok(Expr::Literal(Literal::List(items)))
     }
 
-    fn property(&mut self, reporter: &mut dyn Reporter) -> Result<(Rc<Token>, Expr), ()> {
+    fn property(&mut self, reporter: &mut dyn Reporter) -> Result<(Rc<Token>, Option<Expr>), ()> {
         self.consume(TokenType::Identifier, "توقعت اسم الخاصية", reporter)?;
         let key = self.clone_previous();
-        self.consume(TokenType::Colon, "توقعت ':' بعد الاسم", reporter)?;
-        Ok((Rc::new(key), self.parse_expr(reporter)?))
+        let value = if self.check(TokenType::Colon) {
+            self.advance(reporter)?;
+            Some(self.parse_expr(reporter)?)
+        } else {
+            None
+        };
+        Ok((Rc::new(key), value))
     }
+
     fn object(&mut self, reporter: &mut dyn Reporter) -> Result<Expr, ()> {
         let mut items;
         if self.check(TokenType::CBrace) {

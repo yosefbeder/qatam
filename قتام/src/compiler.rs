@@ -434,7 +434,14 @@ impl<'a> Compiler<'a> {
                         Value::new_string(item.0.lexeme.clone()),
                         Some(Rc::clone(&item.0)),
                     )?;
-                    self.expr(&item.1, reporter)?;
+                    match &item.1 {
+                        Some(expr) => {
+                            self.expr(expr, reporter)?;
+                        }
+                        None => {
+                            self.get_variable(Rc::clone(&item.0))?;
+                        }
+                    }
                     size += 1;
                 }
                 self.chunk.write_instr(BuildObject, None);
