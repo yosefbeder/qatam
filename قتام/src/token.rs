@@ -64,13 +64,15 @@ pub enum TokenType {
     From,
     Export,
     Pipe,
+    For,
+    In,
 
     Unknown,
     NewLine,
     EOF,
 }
 
-pub const BOUNDARIES: [TokenType; 13] = [
+pub const BOUNDARIES: [TokenType; 14] = [
     TokenType::Function,
     TokenType::Var,
     TokenType::While,
@@ -84,6 +86,7 @@ pub const BOUNDARIES: [TokenType; 13] = [
     TokenType::Throw,
     TokenType::Import,
     TokenType::Export,
+    TokenType::For,
 ];
 
 pub const BINARY_SET: [TokenType; 6] = [
@@ -162,13 +165,15 @@ impl From<TokenType> for usize {
             TokenType::From => 56,
             TokenType::Export => 57,
             TokenType::Pipe => 58,
-            TokenType::Unknown => 59,
-            TokenType::EOF => 60,
+            TokenType::For => 59,
+            TokenType::In => 60,
+            TokenType::Unknown => 61,
+            TokenType::EOF => 62,
         }
     }
 }
 
-pub const NUMBER: usize = 61;
+pub const NUMBER: usize = 63;
 
 #[derive(Clone)]
 pub struct Token {

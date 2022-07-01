@@ -83,6 +83,8 @@ impl Tokenizer {
                 "استورد" => TokenType::Import,
                 "من" => TokenType::From,
                 "صدّر" => TokenType::Export,
+                "لكل" => TokenType::For,
+                "في" => TokenType::In,
                 _ => TokenType::Identifier,
             },
             Rc::clone(&self.source),

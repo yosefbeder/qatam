@@ -885,6 +885,19 @@ impl<'a, 'b> Frame<'a, 'b> {
                         return Err((self.pop(), backtrace));
                     }
                 },
+                Size => {
+                    let popped = self.pop();
+
+                    match &popped {
+                        Value::Object(Object::String(string)) => {
+                            self.push(Value::Number(string.chars().count() as f64));
+                        }
+                        Value::Object(Object::List(items)) => {
+                            self.push(Value::Number(items.borrow().len() as f64));
+                        }
+                        _ => return Err(self.string_to_err("يجب أن يكون نصاً أو قائمة".to_string())),
+                    }
+                }
                 Unknown => unreachable!(),
             }
             self.set_ip((self.get_ip() as i32 + progress) as usize);

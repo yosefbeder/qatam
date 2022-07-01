@@ -300,7 +300,7 @@ impl<'a> Compiler<'a> {
             return Ok(());
         }
 
-        if token.lexeme.as_str() != "_" {
+        if !["_", ""].contains(&token.lexeme.as_str()) {
             let locals = &self.state.borrow().locals.clone();
             let mut iter = locals.iter().rev();
             while let Some(local) = iter.next() {
@@ -978,6 +978,65 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn for_in_stml(
+        &mut self,
+        element: &Rc<Token>,
+        iterator: &Expr,
+        body: &Box<Stml>,
+        reporter: &mut dyn Reporter,
+    ) -> Result<(), ()> {
+        // 1. Append the counter and store it's stack idx
+        self.start_scope();
+        let counter_idx = self.state.borrow().locals.len();
+        macro_rules! get_counter {
+            () => {{
+                self.chunk.write_instr(GetLocal, None);
+                self.chunk.write_byte(counter_idx as u8);
+            }};
+        }
+        macro_rules! increase_counter {
+            () => {{
+                get_counter!();
+                self.chunk.write_const(Value::Number(1.0), None)?;
+                self.chunk.write_instr(Add, None);
+                self.chunk.write_instr(SetLocal, None);
+                self.chunk.write_byte(counter_idx as u8);
+                self.chunk.write_instr(Pop, None);
+            }};
+        }
+        self.chunk.write_const(Value::Number(0.0), None)?;
+        self.define_variable(Rc::new(Token::new_empty()), reporter)?;
+
+        // 2. Check the next element
+        let start = self.chunk.len();
+        self.expr(iterator, reporter)?;
+        self.chunk.write_instr(Size, Some(Rc::clone(element))); //TODO find a better token to report this error
+        get_counter!();
+        self.chunk.write_instr(Greater, None);
+
+        let false_jump = self.chunk.write_jump(JumpIfFalse, None);
+        self.chunk.write_instr(Pop, None);
+
+        // 3. Compile the block
+        self.start_scope();
+        self.expr(iterator, reporter)?;
+        get_counter!();
+        self.chunk.write_instr(Get, None);
+        self.define_variable(Rc::clone(element), reporter)?;
+
+        for stml in body.as_block() {
+            self.stml(stml, reporter)?;
+        }
+
+        increase_counter!();
+        self.end_scope();
+        self.chunk.write_loop(start, None);
+        self.chunk.rewrite_jump(false_jump);
+        self.chunk.write_instr(Pop, None);
+        self.end_scope();
+        Ok(())
+    }
+
     pub fn stml(&mut self, stml: &Stml, reporter: &mut dyn Reporter) -> Result<(), ()> {
         match stml {
             Stml::Expr(expr) => {
@@ -1024,6 +1083,9 @@ impl<'a> Compiler<'a> {
             Stml::Export(token, stml) => self.export_stml(Rc::clone(token), stml, reporter)?,
             Stml::TryCatch(try_block, error, catch_block) => {
                 self.try_catch_stml(try_block, Rc::clone(error), catch_block, reporter)?
+            }
+            Stml::ForIn(element, iterator, body) => {
+                self.for_in_stml(element, iterator, body, reporter)?
             }
         }
         Ok(())

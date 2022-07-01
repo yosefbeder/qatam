@@ -49,6 +49,7 @@ pub enum Instruction {
     AppendHandler,
     PopHandler,
     Throw,
+    Size,
     Unknown,
 }
 
@@ -94,7 +95,8 @@ impl Into<u8> for Instruction {
             AppendHandler => 34,
             PopHandler => 35,
             Throw => 36,
-            Unknown => 37,
+            Size => 37,
+            Unknown => 38,
         }
     }
 }
@@ -139,6 +141,7 @@ impl From<u8> for Instruction {
             34 => AppendHandler,
             35 => PopHandler,
             36 => Throw,
+            37 => Size,
             _ => Unknown,
         }
     }
@@ -184,6 +187,7 @@ impl fmt::Debug for Instruction {
             AppendHandler => "APPEND_HANDLER",
             PopHandler => "POP_HANDLER",
             Throw => "THROW",
+            Size => "SIZE",
             Unknown => "UNKNOWN",
         };
 
@@ -234,7 +238,7 @@ impl Chunk {
         match instr {
             Pop | Negate | Add | Subtract | Multiply | Divide | Remainder | Not | Equal
             | Greater | GreaterEqual | Less | LessEqual | Return | GetGlobal | SetGlobal
-            | DefineGlobal | Get | Set | CloseUpValue | PopHandler | Throw => {
+            | DefineGlobal | Get | Set | CloseUpValue | PopHandler | Throw | Size => {
                 buffer += "\n";
                 return (buffer, 1);
             }

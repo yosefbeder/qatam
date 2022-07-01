@@ -538,6 +538,18 @@ impl Parser {
         Ok(Stml::VarDecl(Rc::new(name), initializer))
     }
 
+    fn for_in(&mut self, reporter: &mut dyn Reporter) -> Result<Stml, ()> {
+        self.consume(TokenType::OParen, "توقعت '(' قبل الشرط", reporter)?;
+        self.consume(TokenType::Identifier, "توقعت اسم العنصر", reporter)?;
+        let element = self.clone_previous();
+        self.consume(TokenType::In, "توقعت 'من'", reporter)?;
+        let iterable = self.parse_expr(reporter)?;
+        self.consume(TokenType::CParen, "توقعت ')' بعد الشرط", reporter)?;
+        self.consume(TokenType::OBrace, "توقعت '{'", reporter)?;
+        let body = self.block(reporter)?;
+        Ok(Stml::ForIn(Rc::new(element), iterable, Box::new(body)))
+    }
+
     fn stml(&mut self, reporter: &mut dyn Reporter) -> Result<Stml, ()> {
         if self.check(TokenType::While) {
             self.advance(reporter)?;
@@ -566,6 +578,9 @@ impl Parser {
         } else if self.check(TokenType::Throw) {
             self.advance(reporter)?;
             self.throw_stml(reporter)
+        } else if self.check(TokenType::For) {
+            self.advance(reporter)?;
+            self.for_in(reporter)
         } else {
             self.expr_stml(reporter)
         }
