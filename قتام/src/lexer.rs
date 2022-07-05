@@ -7,7 +7,6 @@ pub type Result = result::Result<Token, LexicalError>;
 pub enum LexicalError {
     Unknown(Token),
     UnTermedString(Token),
-    InvalidNumber(Token),
 }
 
 impl LexicalError {
@@ -15,7 +14,6 @@ impl LexicalError {
         match self {
             Self::Unknown(token) => token,
             Self::UnTermedString(token) => token,
-            Self::InvalidNumber(token) => token,
         }
     }
 }
@@ -130,7 +128,6 @@ impl Lexer {
         match typ {
             TokenType::Unknown => Err(LexicalError::Unknown(token)),
             TokenType::UnTermedString => Err(LexicalError::UnTermedString(token)),
-            TokenType::InvalidNumber => Err(LexicalError::InvalidNumber(token)),
             _ => Ok(token),
         }
     }
@@ -333,22 +330,6 @@ impl Lexer {
                                         }
                                     }
                                 }
-                            }
-                        }
-
-                        if let Some(c) = self.peek(0) {
-                            if c.is_alphabetic() || c == '_' {
-                                self.next();
-                                while let Some(c) = self.peek(0) {
-                                    if c.is_alphanumeric() || c == '_' {
-                                        self.next();
-                                    } else {
-                                        break;
-                                    }
-                                }
-
-                                let token = self.pop_token(TokenType::InvalidNumber);
-                                return token;
                             }
                         }
 

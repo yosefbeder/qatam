@@ -59,7 +59,6 @@ pub enum TokenType {
     True,
     False,
     Number,
-    InvalidNumber,
     Import,
     From,
     Export,
@@ -160,21 +159,20 @@ impl From<TokenType> for usize {
             True => 51,
             False => 52,
             Number => 53,
-            InvalidNumber => 54,
 
-            Import => 55,
-            From => 56,
-            Export => 57,
-            Pipe => 58,
-            For => 59,
-            In => 60,
-            Unknown => 61,
-            EOF => 62,
+            Import => 54,
+            From => 55,
+            Export => 56,
+            Pipe => 57,
+            For => 58,
+            In => 59,
+            Unknown => 60,
+            EOF => 61,
         }
     }
 }
 
-pub const NUMBER: usize = 63;
+pub const NUMBER: usize = 62;
 
 impl Into<&'static str> for TokenType {
     fn into(self) -> &'static str {
@@ -238,7 +236,6 @@ impl Into<&'static str> for TokenType {
             True => "صحيح",
             False => "خطأ",
             Number => "رقم",
-            InvalidNumber => "رقم خاطئ",
 
             Import => "استورد",
             From => "من",
@@ -363,7 +360,6 @@ impl PartialEq for Token {
             | TokenType::String
             | TokenType::UnTermedString
             | TokenType::Number
-            | TokenType::InvalidNumber
             | TokenType::Unknown => self.typ == other.typ && self.lexeme == other.lexeme,
             _ => self.typ == other.typ,
         }
