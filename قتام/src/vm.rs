@@ -1,8 +1,6 @@
 use super::{
     chunk::Instruction::{self, *},
     natives::NATIVES,
-    path::resolve_path,
-    reporter::{Phase, Report, Reporter},
     token::Token,
     utils::combine,
     value::{Arity, Closure, Function, Native, Object, UpValue, Value},
@@ -10,6 +8,79 @@ use super::{
 use std::{
     cell::RefCell, collections::HashMap, fmt, fs::File, path::PathBuf, rc::Rc, time::SystemTime,
 };
+
+#[derive(Debug, Clone)]
+struct BacktraceFrame {
+    token: Rc<Token>,
+    name: Option<String>,
+}
+
+impl BacktraceFrame {
+    fn new(frame: &Frame) -> Self {
+        Self {
+            token: frame.cur_token(),
+            name: frame.get_closure().get_name().clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Backtrace {
+    frames: Vec<BacktraceFrame>,
+}
+
+impl Backtrace {
+    fn new() -> Self {
+        Self { frames: vec![] }
+    }
+
+    fn push(&mut self, frame: BacktraceFrame) {
+        self.frames.push(frame);
+    }
+}
+
+impl fmt::Display for Backtrace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for frame in &self.frames {
+            writeln!(
+                f,
+                "من {} {}",
+                match &frame.name {
+                    Some(name) => name,
+                    None => "دالة غير معروفة",
+                },
+                frame.token.get_pos(),
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeError {
+    value: Value,
+    backtrace: Backtrace,
+}
+
+impl RuntimeError {
+    fn new(value: Value) -> Self {
+        RuntimeError {
+            value,
+            backtrace: Backtrace::new(),
+        }
+    }
+
+    fn push_frame(&mut self, frame: &Frame) {
+        self.backtrace.push(BacktraceFrame::new(frame))
+    }
+}
+
+impl fmt::Display for RuntimeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "خطأ تنفيذي: {}", self.value.to_string())?;
+        write!(f, "{}", self.backtrace)
+    }
+}
 
 pub struct Vm {
     stack: Vec<Value>,
@@ -22,9 +93,9 @@ pub struct Vm {
 impl Vm {
     pub fn new(untrusted: bool) -> Self {
         let mut vm = Self {
-            stack: Vec::new(),
+            stack: vec![],
             globals: HashMap::new(),
-            open_up_values: Vec::new(),
+            open_up_values: vec![],
             created_at: SystemTime::now(),
             untrusted,
         };
@@ -51,7 +122,7 @@ impl Vm {
     }
 
     fn close_up_values(&mut self, location: usize) {
-        let mut new = Vec::new();
+        let mut new = vec![];
 
         for up_value in self.open_up_values.iter() {
             let idx;
@@ -72,77 +143,28 @@ impl Vm {
         self.open_up_values = new;
     }
 
-    pub fn run(&mut self, function: Function, reporter: &mut dyn Reporter) -> Result<(), ()> {
+    pub fn run(&mut self, function: Function) -> Result<(), ()> {
         if cfg!(feature = "debug-execution") {
             println!("---");
             println!("[DEBUG] started executing");
             println!("---");
         }
 
-        let closure = Rc::new(Closure::new(Rc::new(function), Vec::new()));
+        let closure = Rc::new(Closure::new(Rc::new(function), vec![]));
         self.stack
             .push(Value::Object(Object::Closure(Rc::clone(&closure))));
-        let res = Frame::new_closure(self, closure, 0, None).run(0); //TODO backtracing
+        match Frame::new_closure(self, closure, 0, None).run(0) {
+            Err(err) => {
+                eprint!("{err}")
+            }
+            _ => {}
+        };
         self.stack.pop();
-        res.map_err(|(value, backtrace)| {
-            reporter.error(Report::new(
-                Phase::Runtime,
-                value.to_string(),
-                Rc::clone(&backtrace.frames[0].token),
-            ));
-            eprint!("{backtrace}");
-        })?;
         Ok(())
     }
 }
 
-#[derive(Clone, Debug)]
-struct BacktraceFrame {
-    token: Rc<Token>,
-    name: Option<String>,
-}
-
-impl BacktraceFrame {
-    fn new(frame: &Frame) -> Self {
-        if frame.is_native() {
-            unreachable!();
-        }
-        Self {
-            token: frame.cur_token(),
-            name: frame.get_closure().get_name().clone(),
-        }
-    }
-}
-
-#[derive(Clone)]
-struct Backtrace {
-    frames: Vec<BacktraceFrame>,
-}
-
-impl Backtrace {
-    fn new() -> Self {
-        Self { frames: Vec::new() }
-    }
-
-    fn push(&mut self, frame: BacktraceFrame) {
-        self.frames.push(frame);
-    }
-}
-
-impl fmt::Display for Backtrace {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut buffer = String::new();
-        let mut iter = self.frames.iter();
-        while let Some(frame) = iter.next() {
-            let (line, col) = frame.token.get_pos();
-            let name = frame.name.clone().unwrap_or("غير معروفة".to_string());
-            buffer += format!("في {name} {line}:{col}\n").as_str();
-        }
-        write!(f, "{buffer}")
-    }
-}
-
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct Handler {
     slots: usize,
     ip: usize,
@@ -183,7 +205,7 @@ impl<'a, 'b> Frame<'a, 'b> {
             ip: 0,
             slots,
             enclosing_up_values,
-            handlers: Vec::new(),
+            handlers: vec![],
         }
     }
 
@@ -439,19 +461,16 @@ impl<'a, 'b> Frame<'a, 'b> {
     }
 
     pub fn nth_file(&self, idx: usize) -> Result<&Rc<RefCell<File>>, Value> {
-        if let Value::Object(Object::File(file)) = self.nth(idx) {
-            Ok(file)
+        if let Value::Object(Object::File(path)) = self.nth(idx) {
+            Ok(path)
         } else {
             Err(format!("يجب أن يكون المدخل {idx} ملف").into())
         }
     }
 
     pub fn nth_path(&self, idx: usize) -> Result<PathBuf, Value> {
-        if let Value::Object(Object::String(string)) = self.nth(idx) {
-            resolve_path(None, &string, |_| Ok(())).map_err(|string| string.into())
-        } else {
-            Err(format!("يجب أن يكون المدخل {idx} مسار").into())
-        }
+        let path = self.nth_string(idx)?;
+        Ok(PathBuf::from(path))
     }
 
     pub fn get_creation_time(&self) -> &SystemTime {
@@ -459,16 +478,16 @@ impl<'a, 'b> Frame<'a, 'b> {
     }
     //<<
 
-    fn string_to_err(&self, string: String) -> (Value, Backtrace) {
-        let mut backtrace = Backtrace::new();
-        backtrace.push(BacktraceFrame::new(self));
-        (string.to_string().into(), backtrace)
+    fn string_to_err(&self, string: String) -> RuntimeError {
+        let mut err = RuntimeError::new(Value::new_string(string));
+        err.push_frame(self);
+        err
     }
 
-    fn run(&mut self, argc: usize) -> Result<Option<Value>, (Value, Backtrace)> {
+    fn run(&mut self, argc: usize) -> Result<Option<Value>, RuntimeError> {
         if self.is_native() {
             let returned =
-                self.get_native()(self, argc).map_err(|value| (value, Backtrace::new()))?;
+                self.get_native()(self, argc).map_err(|value| RuntimeError::new(value))?;
             return Ok(Some(returned));
         }
 
@@ -523,6 +542,9 @@ impl<'a, 'b> Frame<'a, 'b> {
                 Add => {
                     let b = self.pop();
                     let a = self.pop();
+                    if !Value::are_addable(&a, &b) {
+                        return Err(self.string_to_err("لا يقبل المعاملان الجمع".to_string()));
+                    }
                     self.push(a + b);
                 }
                 Subtract => {
@@ -661,7 +683,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                 }
                 BuildList => {
                     let size = self.read_byte();
-                    let mut items = Vec::new();
+                    let mut items = vec![];
                     let len = self.get_state().stack.len();
                     for item in self.get_state_mut().stack.drain(len - size..) {
                         items.push(item);
@@ -803,8 +825,11 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let enclosing_closure = self.get_closure().clone();
                     let mut frame = match self.get_state().stack[idx].clone() {
                         Value::Object(Object::Closure(closure)) => {
-                            Self::check_arity(closure.get_arity(), argc)
-                                .map_err(|value| self.string_to_err(value.to_string()))?;
+                            Self::check_arity(closure.get_arity(), argc).map_err(|value| {
+                                let mut err = RuntimeError::new(value);
+                                err.push_frame(self);
+                                err
+                            })?;
                             Frame::new_closure(
                                 self.get_state_mut(),
                                 closure,
@@ -815,7 +840,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                         Value::Object(Object::Native(native)) => {
                             Frame::new_native(self.get_state_mut(), native, idx)
                         }
-                        _ => todo!(),
+                        _ => return Err(self.string_to_err("يمكن فقط استدعاء الدوال".to_string())),
                     };
                     progress = 2;
                     match frame.run(argc) {
@@ -823,15 +848,15 @@ impl<'a, 'b> Frame<'a, 'b> {
                             self.truncate(idx);
                             self.push(returned.unwrap());
                         }
-                        Err((value, mut backtrace)) => match self.get_handlers_mut().pop() {
+                        Err(mut err) => match self.get_handlers_mut().pop() {
                             Some(Handler { slots, ip }) => {
                                 self.truncate(slots);
-                                self.push(value);
+                                self.push(err.value);
                                 progress = (ip - self.get_ip()) as i32;
                             }
                             None => {
-                                backtrace.push(BacktraceFrame::new(self));
-                                return Err((value, backtrace));
+                                err.push_frame(self);
+                                return Err(err);
                             }
                         },
                     };
@@ -880,9 +905,9 @@ impl<'a, 'b> Frame<'a, 'b> {
                         progress = (ip - self.get_ip()) as i32;
                     }
                     None => {
-                        let mut backtrace = Backtrace::new();
-                        backtrace.push(BacktraceFrame::new(self));
-                        return Err((self.pop(), backtrace));
+                        let mut err = RuntimeError::new(self.pop());
+                        err.push_frame(self);
+                        return Err(err);
                     }
                 },
                 Size => {

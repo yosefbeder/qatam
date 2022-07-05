@@ -85,7 +85,7 @@ pub fn size(frame: &Frame, argc: usize) -> Result<Value, Value> {
 pub fn props(frame: &Frame, argc: usize) -> Result<Value, Value> {
     Frame::check_arity(Arity::Fixed(1), argc)?;
     let arg = frame.nth_object(1)?.borrow();
-    let mut res = Vec::new();
+    let mut res = vec![];
     let mut entries = arg.iter().collect::<Vec<_>>();
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -235,7 +235,7 @@ pub fn create(frame: &Frame, argc: usize) -> Result<Value, Value> {
 
     match open_options.open(&path) {
         Ok(file) => Ok(Value::Object(Object::File(Rc::new(RefCell::new(file))))),
-        Err(_) => Err(Value::new_string("لا يمكن إنشاء الملف".to_string())),
+        Err(err) => Err(Value::new_string(format!("{err}"))),
     }
 }
 
@@ -245,7 +245,7 @@ pub fn create_folder(frame: &Frame, argc: usize) -> Result<Value, Value> {
     let path = frame.nth_path(1)?;
     match fs::create_dir(&path) {
         Ok(_) => Ok(Value::Nil),
-        Err(_) => Err(Value::new_string("لا يمكن إنشاء المجلد".to_string())),
+        Err(err) => Err(Value::new_string(format!("{err}"))),
     }
 }
 
@@ -269,16 +269,16 @@ pub fn open(frame: &Frame, argc: usize) -> Result<Value, Value> {
 
     match open_options.open(&path) {
         Ok(file) => Ok(Value::new_file(file)),
-        Err(_) => Err(Value::new_string("لا يمكن فتح الملف".to_string())),
+        Err(err) => Err(Value::new_string(format!("{err}"))),
     }
 }
 
 pub fn read(frame: &Frame, argc: usize) -> Result<Value, Value> {
     Frame::check_arity(Arity::Fixed(1), argc)?;
     frame.check_trust()?;
-    let file = frame.nth_file(1)?;
+    let path = frame.nth_file(1)?;
     let mut buffer = String::new();
-    file.borrow_mut().read_to_string(&mut buffer).unwrap();
+    path.borrow_mut().read_to_string(&mut buffer).unwrap();
     Ok(Value::new_string(buffer))
 }
 
@@ -289,7 +289,7 @@ pub fn read_folder(frame: &Frame, argc: usize) -> Result<Value, Value> {
 
     match path.read_dir() {
         Ok(dir) => {
-            let mut res = Vec::new();
+            let mut res = vec![];
             for entry in dir {
                 res.push(Value::new_string(
                     entry.unwrap().path().to_str().unwrap().to_string(),
@@ -297,16 +297,16 @@ pub fn read_folder(frame: &Frame, argc: usize) -> Result<Value, Value> {
             }
             Ok(Value::new_list(res))
         }
-        Err(_) => Err(Value::new_string("لا يمكن قراءة المجلد".to_string())),
+        Err(err) => Err(Value::new_string(format!("{err}"))),
     }
 }
 
 pub fn write(frame: &Frame, argc: usize) -> Result<Value, Value> {
     Frame::check_arity(Arity::Fixed(2), argc)?;
     frame.check_trust()?;
-    let file = frame.nth_file(1)?;
+    let path = frame.nth_file(1)?;
     let content = frame.nth_string(2)?;
-    file.borrow_mut().write_all(content.as_bytes()).unwrap();
+    path.borrow_mut().write_all(content.as_bytes()).unwrap();
     Ok(Value::Nil)
 }
 
@@ -317,7 +317,7 @@ pub fn move_(frame: &Frame, argc: usize) -> Result<Value, Value> {
     let new_path = frame.nth_string(2)?;
     match fs::rename(&old_path, &new_path) {
         Ok(_) => Ok(Value::Nil),
-        Err(_) => Err(Value::new_string("لا يمكن تغيير اسم الملف".to_string())),
+        Err(err) => Err(Value::new_string(format!("{err}"))),
     }
 }
 
@@ -327,7 +327,7 @@ pub fn delete(frame: &Frame, argc: usize) -> Result<Value, Value> {
     let path = frame.nth_path(1)?;
     match fs::remove_file(&path) {
         Ok(_) => Ok(Value::Nil),
-        Err(_) => Err(Value::new_string("لا يمكن حذف الملف".to_string())),
+        Err(err) => Err(Value::new_string(format!("{err}"))),
     }
 }
 
@@ -337,7 +337,7 @@ pub fn delete_folder(frame: &Frame, argc: usize) -> Result<Value, Value> {
     let path = frame.nth_path(1)?;
     match fs::remove_dir(&path) {
         Ok(_) => Ok(Value::Nil),
-        Err(_) => Err(Value::new_string("لا يمكن حذف المجلد".to_string())),
+        Err(err) => Err(Value::new_string(format!("{err}"))),
     }
 }
 

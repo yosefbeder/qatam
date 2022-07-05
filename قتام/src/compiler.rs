@@ -2,12 +2,109 @@ use super::{
     ast::{Expr, Literal, Stml},
     chunk::{Chunk, Instruction::*},
     parser::Parser,
-    path::{qatam_path, resolve_path},
-    reporter::{Phase, Report, Reporter},
     token::{Token, TokenType},
     value::{Arity, Function, Value},
 };
-use std::{cell::RefCell, fs, path::PathBuf, rc::Rc};
+use std::{
+    cell::RefCell, ffi::OsStr, fmt, fs, io::Error as IOError, path::PathBuf, rc::Rc, result,
+};
+
+type Result = result::Result<(), ()>;
+
+#[derive(Debug)]
+enum CompileError {
+    InvalidSpecialChar(Rc<Token>, Option<char>),
+    TooManyConsts(Rc<Token>),
+    SameVarInScope(Rc<Token>),
+    TooManyParams(Rc<Token>),
+    TooManyArgs(Rc<Token>),
+    InvalidReturn(Rc<Token>),
+    InvalidBreak(Rc<Token>),
+    InvalidContinue(Rc<Token>),
+    InvalidImport(Rc<Token>),
+    InvalidExport(Rc<Token>),
+    InvalidImportExt(Rc<Token>),
+    IOError(Rc<Token>, IOError),
+}
+
+impl fmt::Display for CompileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidSpecialChar(token, got) => {
+                if let Some(c) = got {
+                    writeln!(f, "لا يمكن ل'\\' أن يكون متبوعاً ب'{c}' حيث يتبع فقط ب:")?;
+                } else {
+                    writeln!(f, "يجب أن يتبع '\\' بأحد هذه الخيارات:")?;
+                }
+                writeln!(f, "- 'n': سطر جديد")?;
+                writeln!(f, "- 'r': للرجوع لبداية السطر (لا يجب عليك استخدامها إلا إذا كنت عالماً بما تفعل، وإن أردت الإستزادة عنها يمكنك البحث عن carriage return)")?;
+                writeln!(f, "- 't': يوافق الضغط على مفتاح tab")?;
+                writeln!(f, "- '\"': لإضافة '\"'")?;
+                writeln!(f, "- '\\': لإضافة '\\'")?;
+                write!(f, "{}", token.get_pos())
+            }
+            Self::TooManyConsts(token) => {
+                writeln!(
+                    f,
+                    "تم إيراد الكثير من الثوابت في هذه الدالة {}",
+                    token.get_pos()
+                )?;
+                write!(
+                    f,
+                    "إن حدث معك هذا الخطأ تواصل معي على dryosefbeder@gmail.com لكي أساعدك في حله"
+                )
+            }
+            Self::SameVarInScope(token) => {
+                write!(
+                    f,
+                    "المتغير '{}' قد تم تعريفيه في نفس المجموعة من قبل {}",
+                    token.get_pos(),
+                    token.lexeme
+                )
+            }
+            Self::TooManyParams(token) | Self::TooManyArgs(token) => {
+                write!(
+                    f,
+                    "لا يمكن أن يكون للدالة أكثر من 255 مدخل {}",
+                    token.get_pos()
+                )
+            }
+            Self::InvalidReturn(token) => {
+                write!(
+                    f,
+                    "لا يمكن استخدام '{}' خارج الدوال {}",
+                    token.get_pos(),
+                    token.lexeme
+                )
+            }
+            Self::InvalidBreak(token) | Self::InvalidContinue(token) => {
+                write!(
+                    f,
+                    "لا يمكن استخدام '{}' خارج الحلقات التكرارية {}",
+                    token.get_pos(),
+                    token.lexeme
+                )
+            }
+            Self::InvalidImport(token) => {
+                write!(f, "لا يمكن الاستيراد من داخل الدوال {}", token.get_pos())
+            }
+            Self::InvalidExport(token) => {
+                write!(f, "لا يمكن التصدير من داخل الدوال {}", token.get_pos())
+            }
+            Self::InvalidImportExt(token) => {
+                write!(
+                    f,
+                    "يجب أن يكون إمتداد الملف المستورد 'قتام' {}",
+                    token.get_pos()
+                )
+            }
+            Self::IOError(token, err) => {
+                writeln!(f, "حدث خطأ من نظام التشغيل {}", token.get_pos())?;
+                write!(f, "{err}")
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum CompilerType {
@@ -65,7 +162,7 @@ impl Loop {
     fn new(start: usize) -> Loop {
         Loop {
             start,
-            breaks: Vec::new(),
+            breaks: vec![],
         }
     }
 }
@@ -75,7 +172,7 @@ pub struct CompilerState {
     scope_depth: u32,
     locals: Vec<Local>, //TODO make it limited as the stack is
     up_values: Vec<UpValue>,
-    had_error: bool,
+    had_err: bool,
     loops: Vec<Loop>,
     enclosing_state: Option<Rc<RefCell<CompilerState>>>,
 }
@@ -84,10 +181,10 @@ impl CompilerState {
     fn new(enclosing_state: Option<Rc<RefCell<CompilerState>>>) -> Self {
         Self {
             scope_depth: 0,
-            locals: Vec::new(),
-            up_values: Vec::new(),
-            had_error: false,
-            loops: Vec::new(),
+            locals: vec![],
+            up_values: vec![],
+            had_err: false,
+            loops: vec![],
             enclosing_state,
         }
     }
@@ -136,6 +233,11 @@ impl CompilerState {
             }
             _ => None,
         }
+    }
+
+    fn add_local(&mut self, token: Rc<Token>) {
+        let local = Local::new(token, self.scope_depth);
+        self.locals.push(local);
     }
 
     fn get_local(&self, idx: usize) -> &Local {
@@ -226,27 +328,36 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn error_at(&mut self, token: Rc<Token>, msg: &str, reporter: &mut dyn Reporter) {
-        let report = Report::new(Phase::Compilation, msg.to_string(), token);
-        reporter.error(report);
-        self.state.borrow_mut().had_error = true;
+    fn write_const(&mut self, value: Value, token: Rc<Token>) -> Result {
+        match self.chunk.write_const(value, Some(Rc::clone(&token))) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(self.err(CompileError::TooManyConsts(token))),
+        }
     }
 
-    // fn warning_at(&self, token: &Token<>, msg: &str) {
-    //     let report = Report::new(Phase::Parsing, msg.to_string(), Rc::new(token.clone()));
-    //     reporter.warning(report);
-    // }
-
-    fn string(&mut self, token: Rc<Token>, reporter: &mut dyn Reporter) -> Result<String, ()> {
-        let mut content = String::new();
-        let mut iter = token.lexeme.chars();
-
-        if let Some(c) = iter.next() {
-            if c != '"' {
-                content.push(c)
-            }
+    fn write_closure(
+        &mut self,
+        function: Function,
+        up_values: &[UpValue],
+        token: Rc<Token>,
+    ) -> Result {
+        match self
+            .chunk
+            .write_closure(function, up_values, Some(Rc::clone(&token)))
+        {
+            Ok(_) => Ok(()),
+            Err(_) => Err(self.err(CompileError::TooManyConsts(token))),
         }
+    }
 
+    fn err(&mut self, err: CompileError) {
+        eprintln!("{err}");
+        self.state.borrow_mut().had_err = true;
+    }
+
+    fn quoted_string(&mut self, token: Rc<Token>) -> result::Result<String, ()> {
+        let mut content = String::new();
+        let mut iter = token.lexeme.chars().skip(1);
         while let Some(c) = iter.next() {
             if c == '\\' {
                 if let Some(c) = iter.next() {
@@ -256,14 +367,14 @@ impl<'a> Compiler<'a> {
                         't' => content.push('\t'),
                         '\\' => content.push('\\'),
                         '"' => content.push('"'),
-                        '\'' => content.push('\''),
-                        '0' => content.push('\0'),
                         _ => {
-                            //TODO add a hint here
-                            self.error_at(Rc::clone(&token), "رمز غير متوقع بعد '\\'", reporter);
+                            self.err(CompileError::InvalidSpecialChar(token, Some(c)));
                             return Err(());
                         }
                     }
+                } else {
+                    self.err(CompileError::InvalidSpecialChar(token, None));
+                    return Err(());
                 }
             } else if c == '"' {
                 break;
@@ -272,6 +383,14 @@ impl<'a> Compiler<'a> {
             }
         }
         Ok(content)
+    }
+
+    fn string(&mut self, token: Rc<Token>) -> result::Result<String, ()> {
+        if token.lexeme.starts_with('"') {
+            self.quoted_string(token)
+        } else {
+            Ok(token.lexeme.clone())
+        }
     }
 
     fn in_global_scope(&self) -> bool {
@@ -287,52 +406,40 @@ impl<'a> Compiler<'a> {
         self.typ != CompilerType::Function && self.state.borrow().scope_depth == 0
     }
 
-    fn define_variable(&mut self, token: Rc<Token>, reporter: &mut dyn Reporter) -> Result<(), ()> {
-        let scope_depth = self.state.borrow().scope_depth;
-
-        if self.in_global_scope() {
-            self.chunk.write_const(
-                Value::new_string(token.lexeme.clone()),
-                Some(Rc::clone(&token)),
-            )?;
-            self.chunk
-                .write_instr(DefineGlobal, Some(Rc::clone(&token)));
-            return Ok(());
-        }
-
-        if !["_", ""].contains(&token.lexeme.as_str()) {
-            let locals = &self.state.borrow().locals.clone();
-            let mut iter = locals.iter().rev();
-            while let Some(local) = iter.next() {
-                if local.depth != scope_depth {
-                    break;
-                }
-                if local.name == token {
-                    self.error_at(
-                        token,
-                        "لا يمكنك تعريف نفس المتغير أكثر من مرة في نفس المجموعة",
-                        reporter,
-                    );
-                    return Err(());
-                }
-            }
-        }
-
-        let local = Local::new(token, scope_depth);
-        self.state.borrow_mut().locals.push(local);
+    fn define_global(&mut self, token: Rc<Token>) -> Result {
+        self.write_const(Value::new_string(token.lexeme.clone()), Rc::clone(&token))?;
+        self.chunk.write_instr(DefineGlobal, Some(token));
         Ok(())
     }
 
-    fn set_global(&mut self, token: Rc<Token>) -> Result<(), ()> {
-        self.chunk.write_const(
-            Value::new_string(token.lexeme.clone()),
-            Some(Rc::clone(&token)),
-        )?;
+    fn define_local(&mut self, token: Rc<Token>) -> Result {
+        if &token.lexeme == "_" {
+            return Ok(self.state.borrow_mut().add_local(token));
+        }
+
+        let idx = self.state.borrow().resolve_local(Rc::clone(&token));
+
+        match idx {
+            Some(_) => Err(self.err(CompileError::SameVarInScope(token))),
+            None => Ok(self.state.borrow_mut().add_local(token)),
+        }
+    }
+
+    fn define_variable(&mut self, token: Rc<Token>) -> Result {
+        if self.in_global_scope() {
+            self.define_global(token)
+        } else {
+            self.define_local(token)
+        }
+    }
+
+    fn set_global(&mut self, token: Rc<Token>) -> Result {
+        self.write_const(Value::new_string(token.lexeme.clone()), Rc::clone(&token))?;
         self.chunk.write_instr(SetGlobal, Some(Rc::clone(&token)));
         return Ok(());
     }
 
-    fn set_variable(&mut self, token: Rc<Token>) -> Result<(), ()> {
+    fn set_variable(&mut self, token: Rc<Token>) -> Result {
         if self.in_global_scope() {
             return self.set_global(Rc::clone(&token));
         }
@@ -362,7 +469,7 @@ impl<'a> Compiler<'a> {
         self.set_global(Rc::clone(&token))
     }
 
-    fn get_variable(&mut self, token: Rc<Token>) -> Result<(), ()> {
+    fn get_variable(&mut self, token: Rc<Token>) -> Result {
         let state = self.state.borrow();
         match state.resolve_local(Rc::clone(&token)) {
             Some(idx) => {
@@ -385,43 +492,40 @@ impl<'a> Compiler<'a> {
         }
         drop(state);
 
-        self.chunk.write_const(
-            Value::new_string(token.lexeme.clone()),
-            Some(Rc::clone(&token)),
-        )?;
+        self.write_const(Value::new_string(token.lexeme.clone()), Rc::clone(&token))?;
         self.chunk.write_instr(GetGlobal, Some(Rc::clone(&token)));
         Ok(())
     }
 
-    fn literal(&mut self, literal: &Literal, reporter: &mut dyn Reporter) -> Result<(), ()> {
+    fn literal(&mut self, literal: &Literal) -> Result {
         match literal {
             Literal::Number(token) => {
-                self.chunk.write_const(
+                self.write_const(
                     Value::Number(token.lexeme.clone().parse().unwrap()),
-                    Some(Rc::clone(token)),
+                    Rc::clone(token),
                 )?;
             }
             Literal::Bool(token) => {
-                self.chunk.write_const(
+                self.write_const(
                     Value::Bool(match token.typ {
                         TokenType::True => true,
                         TokenType::False => false,
                         _ => unreachable!(),
                     }),
-                    Some(Rc::clone(token)),
+                    Rc::clone(token),
                 )?;
             }
             Literal::String(token) => {
-                let value = Value::new_string(self.string(Rc::clone(token), reporter)?);
-                self.chunk.write_const(value, Some(Rc::clone(token)))?;
+                let value = Value::new_string(self.string(Rc::clone(token))?);
+                self.write_const(value, Rc::clone(token))?;
             }
             Literal::Nil(token) => {
-                self.chunk.write_const(Value::Nil, Some(Rc::clone(token)))?;
+                self.write_const(Value::Nil, Rc::clone(token))?;
             }
             Literal::List(exprs) => {
                 let mut size = 0;
                 for expr in exprs {
-                    self.expr(expr, reporter)?;
+                    self.expr(expr)?;
                     size += 1;
                 }
                 self.chunk.write_instr(BuildList, None);
@@ -430,13 +534,10 @@ impl<'a> Compiler<'a> {
             Literal::Object(items) => {
                 let mut size = 0;
                 for item in items {
-                    self.chunk.write_const(
-                        Value::new_string(item.0.lexeme.clone()),
-                        Some(Rc::clone(&item.0)),
-                    )?;
+                    self.write_const(Value::new_string(item.0.lexeme.clone()), Rc::clone(&item.0))?;
                     match &item.1 {
                         Some(expr) => {
-                            self.expr(expr, reporter)?;
+                            self.expr(expr)?;
                         }
                         None => {
                             self.get_variable(Rc::clone(&item.0))?;
@@ -451,8 +552,8 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn unary(&mut self, op: Rc<Token>, expr: &Expr, reporter: &mut dyn Reporter) -> Result<(), ()> {
-        self.expr(expr, reporter)?;
+    fn unary(&mut self, op: Rc<Token>, expr: &Expr) -> Result {
+        self.expr(expr)?;
         match op.typ {
             TokenType::Minus => {
                 self.chunk.write_instr(Negate, Some(Rc::clone(&op)));
@@ -465,18 +566,12 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn binary(
-        &mut self,
-        op: Rc<Token>,
-        left: &Expr,
-        right: &Expr,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
+    fn binary(&mut self, op: Rc<Token>, lhs: &Expr, rhs: &Expr) -> Result {
         macro_rules! set_and {
             ($instr:ident) => {{
-                let token = left.as_variable();
+                let token = lhs.as_variable();
                 self.get_variable(token.clone())?;
-                self.expr(right, reporter)?;
+                self.expr(rhs)?;
                 self.chunk.write_instr($instr, Some(op));
                 self.set_variable(token.clone())?;
                 return Ok(());
@@ -485,8 +580,8 @@ impl<'a> Compiler<'a> {
 
         match op.typ {
             TokenType::Equal => {
-                self.expr(right, reporter)?;
-                self.set_variable(left.as_variable().clone())?;
+                self.expr(rhs)?;
+                self.set_variable(lhs.as_variable().clone())?;
                 return Ok(());
             }
             TokenType::PlusEqual => set_and!(Add),
@@ -497,27 +592,27 @@ impl<'a> Compiler<'a> {
             _ => {}
         }
 
-        self.expr(left, reporter)?;
+        self.expr(lhs)?;
 
         match op.typ {
             TokenType::And => {
                 let false_jump = self.chunk.write_jump(JumpIfFalse, Some(Rc::clone(&op)));
                 self.chunk.write_instr(Pop, Some(Rc::clone(&op)));
-                self.expr(right, reporter)?;
+                self.expr(rhs)?;
                 self.chunk.rewrite_jump(false_jump);
                 return Ok(());
             }
             TokenType::Or => {
                 let true_jump = self.chunk.write_jump(JumpIfTrue, Some(Rc::clone(&op)));
                 self.chunk.write_instr(Pop, Some(Rc::clone(&op)));
-                self.expr(right, reporter)?;
+                self.expr(rhs)?;
                 self.chunk.rewrite_jump(true_jump);
                 return Ok(());
             }
             _ => {}
         }
 
-        self.expr(right, reporter)?;
+        self.expr(rhs)?;
         match op.typ {
             TokenType::Plus => {
                 self.chunk.write_instr(Add, Some(Rc::clone(&op)));
@@ -558,38 +653,24 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    //TODO check reassure that 'left' and 'right' works the way you want
-    fn get(
-        &mut self,
-        token: Rc<Token>,
-        instance: &Expr,
-        key: &Expr,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
-        self.expr(instance, reporter)?;
-        self.expr(key, reporter)?;
+    fn get(&mut self, token: Rc<Token>, instance: &Expr, key: &Expr) -> Result {
+        self.expr(instance)?;
+        self.expr(key)?;
         self.chunk.write_instr(Get, Some(Rc::clone(&token)));
         Ok(())
     }
 
-    fn set(
-        &mut self,
-        token: Rc<Token>,
-        instance: &Expr,
-        key: &Expr,
-        value: &Expr,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
+    fn set(&mut self, token: Rc<Token>, instance: &Expr, key: &Expr, value: &Expr) -> Result {
         macro_rules! get_and {
             ($instr:ident) => {{
-                self.expr(instance, reporter)?;
-                self.expr(key, reporter)?;
+                self.expr(instance)?;
+                self.expr(key)?;
                 self.chunk.write_instr(Get, Some(Rc::clone(&token)));
                 self.chunk.write_instr($instr, Some(Rc::clone(&token)));
             }};
         }
 
-        self.expr(value, reporter)?;
+        self.expr(value)?;
         match token.typ {
             TokenType::PlusEqual => get_and!(Add),
             TokenType::MinusEqual => get_and!(Subtract),
@@ -599,27 +680,21 @@ impl<'a> Compiler<'a> {
             _ => {}
         }
 
-        self.expr(instance, reporter)?;
-        self.expr(key, reporter)?;
+        self.expr(instance)?;
+        self.expr(key)?;
         self.chunk.write_instr(Set, Some(Rc::clone(&token)));
         Ok(())
     }
 
-    fn call(
-        &mut self,
-        token: Rc<Token>,
-        callee: &Expr,
-        args: &Vec<Expr>,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
-        self.expr(callee, reporter)?;
+    fn call(&mut self, token: Rc<Token>, callee: &Expr, args: &Vec<Expr>) -> Result {
+        self.expr(callee)?;
         let mut count = 0;
         for arg in args {
             if count == 0xff {
-                self.error_at(token, "عدد كثر من المدخلات", reporter);
+                self.err(CompileError::TooManyArgs(token));
                 return Err(());
             }
-            self.expr(arg, reporter)?;
+            self.expr(arg)?;
             count += 1;
         }
         self.chunk.write_instr(Call, Some(Rc::clone(&token)));
@@ -627,138 +702,112 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn lambda(
-        &mut self,
-        params: &Vec<Rc<Token>>,
-        body: &Box<Stml>,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
+    fn lambda(&mut self, token: Rc<Token>, params: &Vec<Rc<Token>>, body: &Box<Stml>) -> Result {
         let mut compiler =
             Compiler::new_function(None, body, Rc::clone(&self.state), self.path.clone());
-        compiler.define_variable(Rc::new(Token::new_empty()), reporter)?;
-        compiler.define_params(params, reporter)?;
-        self.chunk.write_closure(
-            compiler.compile(reporter)?,
+        compiler.define_variable(Rc::new(Token::new_empty()))?;
+        compiler.define_params(params)?;
+        self.write_closure(
+            compiler.compile().map_err(|_| {
+                self.state.borrow_mut().had_err = true;
+            })?,
             &compiler.state.borrow().up_values,
-            None,
+            token,
         )?;
         Ok(())
     }
 
-    pub fn expr(&mut self, expr: &Expr, reporter: &mut dyn Reporter) -> Result<(), ()> {
+    pub fn expr(&mut self, expr: &Expr) -> Result {
         match expr {
             Expr::Variable(token) => self.get_variable(Rc::clone(token))?,
-            Expr::Literal(literal) => self.literal(literal, reporter)?,
-            Expr::Unary(op, expr) => self.unary(Rc::clone(op), expr, reporter)?,
-            Expr::Binary(op, left, right) => self.binary(Rc::clone(op), left, right, reporter)?,
-            Expr::Get(token, instance, key) => {
-                self.get(Rc::clone(&token), instance, key, reporter)?
-            }
+            Expr::Literal(literal) => self.literal(literal)?,
+            Expr::Unary(op, expr) => self.unary(Rc::clone(op), expr)?,
+            Expr::Binary(op, lhs, rhs) => self.binary(Rc::clone(op), lhs, rhs)?,
+            Expr::Get(token, instance, key) => self.get(Rc::clone(&token), instance, key)?,
             Expr::Set(token, instance, key, value) => {
-                self.set(Rc::clone(&token), instance, key, value, reporter)?
+                self.set(Rc::clone(&token), instance, key, value)?
             }
-            Expr::Call(token, callee, args) => {
-                self.call(Rc::clone(&token), callee, args, reporter)?
-            }
-            Expr::Lambda(params, body) => self.lambda(params, body, reporter)?,
+            Expr::Call(token, callee, args) => self.call(Rc::clone(&token), callee, args)?,
+            Expr::Lambda(token, params, body) => self.lambda(Rc::clone(token), params, body)?,
         };
         Ok(())
     }
 
-    fn define_params(
-        &mut self,
-        params: &Vec<Rc<Token>>,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
+    fn define_params(&mut self, params: &Vec<Rc<Token>>) -> Result {
         if self.typ == CompilerType::Script {
             unreachable!();
         }
 
         for param in params {
             if self.arity == 0xff {
-                self.error_at(Rc::clone(param), "عدد كثير من المعاملات", reporter);
+                self.err(CompileError::TooManyParams(Rc::clone(param)));
                 return Err(());
             }
-            self.define_variable(Rc::clone(param), reporter)?;
+            self.define_variable(Rc::clone(param))?;
             self.arity += 1;
         }
 
         Ok(())
     }
 
-    fn function_decl(
-        &mut self,
-        name: Rc<Token>,
-        params: &Vec<Rc<Token>>,
-        body: &Stml,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
+    fn function_decl(&mut self, name: Rc<Token>, params: &Vec<Rc<Token>>, body: &Stml) -> Result {
         let mut compiler = Compiler::new_function(
             Some(name.lexeme.clone()),
             body,
             Rc::clone(&self.state),
             self.path.clone(),
         );
-        compiler.define_variable(Rc::clone(&name), reporter)?;
-        compiler.define_params(params, reporter)?;
-        self.chunk.write_closure(
-            compiler.compile(reporter)?,
+        compiler.define_variable(Rc::clone(&name))?;
+        compiler.define_params(params)?;
+        self.write_closure(
+            compiler.compile().map_err(|_| {
+                self.state.borrow_mut().had_err = true;
+            })?,
             &compiler.state.borrow().up_values,
-            Some(Rc::clone(&name)),
+            Rc::clone(&name),
         )?;
-        self.define_variable(name, reporter)?;
+        self.define_variable(name)?;
         Ok(())
     }
     fn var_decl(
         &mut self,
+        token: Rc<Token>,
         name: Rc<Token>,
         initializer: &Option<Expr>,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
+    ) -> Result {
         match initializer {
-            Some(expr) => self.expr(expr, reporter)?,
+            Some(expr) => self.expr(expr)?,
             None => {
-                self.chunk.write_const(Value::Nil, None)?;
+                self.write_const(Value::Nil, token)?;
             }
         };
-        self.define_variable(Rc::clone(&name), reporter)
+        self.define_variable(Rc::clone(&name))
     }
 
-    fn return_stml(
-        &mut self,
-        token: Rc<Token>,
-        value: &Option<Expr>,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
+    fn return_stml(&mut self, token: Rc<Token>, value: &Option<Expr>) -> Result {
         if !self.in_function() {
-            self.error_at(token, "لا يمكنك استخدام 'أرجع' خارج دالة", reporter);
+            self.err(CompileError::InvalidReturn(token));
             return Err(());
         }
-
         match value {
             Some(expr) => {
-                self.expr(&*expr, reporter)?;
+                self.expr(&*expr)?;
             }
             None => {
-                self.chunk.write_const(Value::Nil, None)?;
+                self.write_const(Value::Nil, token)?;
             }
         }
         self.chunk.write_instr(Return, None);
         Ok(())
     }
 
-    fn throw_stml(
-        &mut self,
-        token: Rc<Token>,
-        value: &Option<Expr>,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
+    fn throw_stml(&mut self, token: Rc<Token>, value: &Option<Expr>) -> Result {
         match value {
             Some(expr) => {
-                self.expr(&*expr, reporter)?;
+                self.expr(&*expr)?;
             }
             None => {
-                self.chunk.write_const(Value::Nil, None)?;
+                self.write_const(Value::Nil, Rc::clone(&token))?;
             }
         }
         self.chunk.write_instr(Throw, Some(token));
@@ -795,28 +844,27 @@ impl<'a> Compiler<'a> {
         if_body: &Box<Stml>,
         elseifs: &Vec<(Expr, Stml)>,
         else_body: &Option<Box<Stml>>,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
-        self.expr(condition, reporter)?;
+    ) -> Result {
+        self.expr(condition)?;
         let false_jump = self.chunk.write_jump(JumpIfFalse, None);
         self.chunk.write_instr(Pop, None);
-        self.stml(if_body, reporter)?;
+        self.stml(if_body)?;
         let mut true_jumps = vec![self.chunk.write_jump(Jump, None)];
         self.chunk.rewrite_jump(false_jump);
         self.chunk.write_instr(Pop, None);
         let mut iter = elseifs.iter();
         while let Some((condition, body)) = iter.next() {
-            self.expr(condition, reporter)?;
+            self.expr(condition)?;
             let false_jump = self.chunk.write_jump(JumpIfFalse, None);
             self.chunk.write_instr(Pop, None);
-            self.stml(body, reporter)?;
+            self.stml(body)?;
             true_jumps.push(self.chunk.write_jump(Jump, None));
             self.chunk.rewrite_jump(false_jump);
             self.chunk.write_instr(Pop, None);
         }
         match else_body {
             Some(stml) => {
-                self.stml(stml, reporter)?;
+                self.stml(stml)?;
             }
             None => {}
         }
@@ -839,18 +887,13 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn while_stml(
-        &mut self,
-        condition: &Expr,
-        body: &Box<Stml>,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
+    fn while_stml(&mut self, condition: &Expr, body: &Box<Stml>) -> Result {
         let start = self.start_loop().start;
 
-        self.expr(condition, reporter)?;
+        self.expr(condition)?;
         let false_jump = self.chunk.write_jump(JumpIfFalse, None);
         self.chunk.write_instr(Pop, None);
-        self.stml(body, reporter)?;
+        self.stml(body)?;
         self.chunk.write_loop(start, None);
         self.chunk.rewrite_jump(false_jump);
         self.chunk.write_instr(Pop, None);
@@ -859,19 +902,19 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn loop_stml(&mut self, body: &Box<Stml>, reporter: &mut dyn Reporter) -> Result<(), ()> {
+    fn loop_stml(&mut self, body: &Box<Stml>) -> Result {
         let start = self.start_loop().start;
 
-        self.stml(body, reporter)?;
+        self.stml(body)?;
         self.chunk.write_loop(start, None);
 
         self.end_loop();
         Ok(())
     }
 
-    fn break_stml(&mut self, token: Rc<Token>, reporter: &mut dyn Reporter) -> Result<(), ()> {
+    fn break_stml(&mut self, token: Rc<Token>) -> Result {
         if self.state.borrow().loops.is_empty() {
-            self.error_at(token, "لا يمكنك استخدام 'قف' خارج حلقة تكرارية", reporter);
+            self.err(CompileError::InvalidBreak(token));
             return Err(());
         }
 
@@ -880,9 +923,9 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn continue_stml(&mut self, token: Rc<Token>, reporter: &mut dyn Reporter) -> Result<(), ()> {
+    fn continue_stml(&mut self, token: Rc<Token>) -> Result {
         if self.state.borrow().loops.is_empty() {
-            self.error_at(token, "لا يمكنك استخدام 'أكمل' خارج حلقة تكرارية", reporter);
+            self.err(CompileError::InvalidContinue(token));
             return Err(());
         }
 
@@ -891,64 +934,67 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn import_stml(
-        &mut self,
-        name: Rc<Token>,
-        path: Rc<Token>,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
+    /// creates a path out of the path of the current compiler and the string stored in token
+    fn path(&mut self, token: Rc<Token>) -> result::Result<PathBuf, ()> {
+        let temp = self.string(token)?;
+        if let Some(cur_path) = &self.path {
+            if let Some(dir) = cur_path.parent() {
+                return Ok(dir.join(temp));
+            }
+        }
+        Ok(PathBuf::from(temp))
+    }
+
+    fn import_stml(&mut self, name: Rc<Token>, path_token: Rc<Token>) -> Result {
         if !self.can_import() {
-            self.error_at(name, "لا يمكنك الاستيراد في هذا السياق", reporter); //TODO clarify
+            self.err(CompileError::InvalidImport(name));
             return Err(());
         }
 
-        let as_string = self.string(Rc::clone(&path), reporter)?;
+        let path = self.path(Rc::clone(&path_token))?;
 
-        let path = match resolve_path(self.path.clone(), &as_string, qatam_path) {
-            Ok(path) => path,
-            Err(err) => {
-                self.error_at(path, &err, reporter);
-                return Err(());
-            }
-        };
+        if path.extension() != Some(OsStr::new("قتام")) {
+            self.err(CompileError::InvalidImportExt(Rc::clone(&path_token)));
+            return Err(());
+        }
 
-        let source = fs::read_to_string(&path).unwrap();
+        let source = fs::read_to_string(&path)
+            .map_err(|err| self.err(CompileError::IOError(path_token, err)))?;
         let mut parser = Parser::new(source, Some(path.clone()));
-        let ast = parser.parse(reporter)?;
+        let ast = parser.parse().map_err(|_| {
+            self.state.borrow_mut().had_err = true;
+        })?;
         let mut compiler = Compiler::new_module(&ast, path);
-        self.chunk.write_closure(
-            compiler.compile(reporter)?,
+        self.write_closure(
+            compiler.compile().map_err(|_| {
+                self.state.borrow_mut().had_err = true;
+            })?,
             &compiler.state.borrow().up_values,
-            Some(Rc::clone(&name)),
+            Rc::clone(&name),
         )?;
         self.chunk.write_instr(Call, Some(Rc::clone(&name)));
         self.chunk.write_byte(0u8);
-        self.define_variable(name, reporter)
+        self.define_variable(name)
     }
 
-    pub fn export_stml(
-        &mut self,
-        token: Rc<Token>,
-        stml: &Stml,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
+    pub fn export_stml(&mut self, token: Rc<Token>, stml: &Stml) -> Result {
         if !self.can_import() {
-            self.error_at(token, "لا يمكنك التصدير في هذا السياق", reporter);
+            self.err(CompileError::InvalidExport(token));
             return Err(());
         }
 
         match stml {
             Stml::FunctionDecl(name, params, body) => {
-                match self.function_decl(Rc::clone(name), params, body, reporter) {
+                match self.function_decl(Rc::clone(name), params, body) {
                     Ok(_) => {}
                     Err(_) => {
-                        self.state.borrow_mut().had_error = true;
+                        self.state.borrow_mut().had_err = true;
                         return Err(());
                     }
                 }
             }
-            Stml::VarDecl(name, initializer) => {
-                self.var_decl(Rc::clone(name), initializer, reporter)?;
+            Stml::VarDecl(token, name, initializer) => {
+                self.var_decl(Rc::clone(token), Rc::clone(name), initializer)?;
             }
             _ => unreachable!(),
         };
@@ -959,12 +1005,11 @@ impl<'a> Compiler<'a> {
     fn try_catch_stml(
         &mut self,
         try_block: &Box<Stml>,
-        error: Rc<Token>,
+        err: Rc<Token>,
         catch_block: &Box<Stml>,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
+    ) -> Result {
         let catch_jump = self.chunk.write_jump(AppendHandler, None);
-        self.stml(try_block, reporter)?;
+        self.stml(try_block)?;
         self.chunk.write_instr(PopHandler, None);
         let finally_jump = self.chunk.write_jump(Jump, None);
         self.chunk.rewrite_jump(catch_jump);
@@ -972,9 +1017,9 @@ impl<'a> Compiler<'a> {
         match &**catch_block {
             Stml::Block(stmls) => {
                 self.start_scope();
-                self.define_variable(error, reporter)?;
+                self.define_variable(err)?;
                 for stml in stmls {
-                    self.stml(stml, reporter)?;
+                    self.stml(stml)?;
                 }
                 self.end_scope();
             }
@@ -987,11 +1032,11 @@ impl<'a> Compiler<'a> {
 
     fn for_in_stml(
         &mut self,
-        element: &Rc<Token>,
+        token: Rc<Token>,
+        element: Rc<Token>,
         iterator: &Expr,
         body: &Box<Stml>,
-        reporter: &mut dyn Reporter,
-    ) -> Result<(), ()> {
+    ) -> Result {
         // 1. Append the counter and store it's stack idx
         self.start_scope();
         let counter_idx = self.state.borrow().locals.len();
@@ -1004,20 +1049,20 @@ impl<'a> Compiler<'a> {
         macro_rules! increase_counter {
             () => {{
                 get_counter!();
-                self.chunk.write_const(Value::Number(1.0), None)?;
+                self.write_const(Value::Number(1.0), Rc::clone(&token))?;
                 self.chunk.write_instr(Add, None);
                 self.chunk.write_instr(SetLocal, None);
                 self.chunk.write_byte(counter_idx as u8);
                 self.chunk.write_instr(Pop, None);
             }};
         }
-        self.chunk.write_const(Value::Number(0.0), None)?;
-        self.define_variable(Rc::new(Token::new_empty()), reporter)?;
+        self.write_const(Value::Number(0.0), Rc::clone(&token))?;
+        self.define_variable(Rc::new(Token::new_empty()))?;
 
         // 2. Check the next element
         let start = self.chunk.len();
-        self.expr(iterator, reporter)?;
-        self.chunk.write_instr(Size, Some(Rc::clone(element))); //TODO find a better token to report this error
+        self.expr(iterator)?;
+        self.chunk.write_instr(Size, Some(Rc::clone(&element))); //TODO find a better token to report this err
         get_counter!();
         self.chunk.write_instr(Greater, None);
 
@@ -1026,13 +1071,13 @@ impl<'a> Compiler<'a> {
 
         // 3. Compile the block
         self.start_scope();
-        self.expr(iterator, reporter)?;
+        self.expr(iterator)?;
         get_counter!();
         self.chunk.write_instr(Get, None);
-        self.define_variable(Rc::clone(element), reporter)?;
+        self.define_variable(Rc::clone(&element))?;
 
         for stml in body.as_block() {
-            self.stml(stml, reporter)?;
+            self.stml(stml)?;
         }
 
         increase_counter!();
@@ -1044,61 +1089,47 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    pub fn stml(&mut self, stml: &Stml, reporter: &mut dyn Reporter) -> Result<(), ()> {
+    pub fn stml(&mut self, stml: &Stml) -> Result {
         match stml {
             Stml::Expr(expr) => {
-                self.expr(expr, reporter)?;
+                self.expr(expr)?;
                 self.chunk.write_instr(Pop, None);
             }
             Stml::FunctionDecl(name, params, body) => {
-                match self.function_decl(Rc::clone(name), params, body, reporter) {
-                    Ok(_) => {}
-                    Err(_) => {
-                        self.state.borrow_mut().had_error = true;
-                        return Err(());
-                    }
-                };
+                self.function_decl(Rc::clone(name), params, body)?
             }
-            Stml::VarDecl(name, initializer) => {
-                self.var_decl(Rc::clone(name), initializer, reporter)?;
+            Stml::VarDecl(token, name, initializer) => {
+                self.var_decl(Rc::clone(token), Rc::clone(name), initializer)?;
             }
-            Stml::Return(token, value) => self.return_stml(Rc::clone(token), value, reporter)?,
-            Stml::Throw(token, value) => self.throw_stml(Rc::clone(token), value, reporter)?,
+            Stml::Return(token, value) => self.return_stml(Rc::clone(token), value)?,
+            Stml::Throw(token, value) => self.throw_stml(Rc::clone(token), value)?,
             Stml::Block(stmls) => {
                 self.start_scope();
                 for stml in stmls {
-                    self.stml(stml, reporter)?;
+                    self.stml(stml)?;
                 }
                 self.end_scope();
             }
             Stml::IfElse(condition, if_body, elseifs, else_body) => {
-                self.if_else_stml(condition, if_body, elseifs, else_body, reporter)?
+                self.if_else_stml(condition, if_body, elseifs, else_body)?
             }
-            Stml::While(condition, body) => self.while_stml(condition, body, reporter)?,
-            Stml::Loop(body) => self.loop_stml(body, reporter)?,
-            Stml::Break(token) => self.break_stml(Rc::clone(token), reporter)?,
-            Stml::Continue(token) => self.continue_stml(Rc::clone(token), reporter)?,
-            Stml::Import(name, path) => {
-                match self.import_stml(Rc::clone(name), Rc::clone(path), reporter) {
-                    Ok(_) => {}
-                    Err(_) => {
-                        self.error_at(Rc::clone(name), "حدث خطأ اثناء الاستيراد", reporter);
-                        return Err(());
-                    }
-                }
+            Stml::While(condition, body) => self.while_stml(condition, body)?,
+            Stml::Loop(body) => self.loop_stml(body)?,
+            Stml::Break(token) => self.break_stml(Rc::clone(token))?,
+            Stml::Continue(token) => self.continue_stml(Rc::clone(token))?,
+            Stml::Import(name, path) => self.import_stml(Rc::clone(name), Rc::clone(path))?,
+            Stml::Export(token, stml) => self.export_stml(Rc::clone(token), stml)?,
+            Stml::TryCatch(try_block, err, catch_block) => {
+                self.try_catch_stml(try_block, Rc::clone(err), catch_block)?
             }
-            Stml::Export(token, stml) => self.export_stml(Rc::clone(token), stml, reporter)?,
-            Stml::TryCatch(try_block, error, catch_block) => {
-                self.try_catch_stml(try_block, Rc::clone(error), catch_block, reporter)?
-            }
-            Stml::ForIn(element, iterator, body) => {
-                self.for_in_stml(element, iterator, body, reporter)?
+            Stml::ForIn(token, element, iterator, body) => {
+                self.for_in_stml(Rc::clone(token), Rc::clone(element), iterator, body)?
             }
         }
         Ok(())
     }
 
-    pub fn compile(&mut self, reporter: &mut dyn Reporter) -> Result<Function, ()> {
+    pub fn compile(&mut self) -> result::Result<Function, ()> {
         if cfg!(feature = "debug-bytecode") && self.typ == CompilerType::Script {
             println!("---");
             println!("[DEBUG] started compiling");
@@ -1106,12 +1137,12 @@ impl<'a> Compiler<'a> {
         }
 
         for stml in self.ast {
-            self.stml(stml, reporter).ok();
+            self.stml(stml).ok();
         }
 
         match self.typ {
             CompilerType::Function => {
-                self.chunk.write_const(Value::Nil, None)?;
+                self.write_const(Value::Nil, Rc::new(Token::new_empty()))?; //? not gonna be used anyways 😅
                 self.chunk.write_instr(Return, None);
             }
             CompilerType::Module => {
@@ -1136,7 +1167,7 @@ impl<'a> Compiler<'a> {
             _ => {}
         }
 
-        if self.state.borrow().had_error {
+        if self.state.borrow().had_err {
             Err(())
         } else {
             Ok(Function::new(

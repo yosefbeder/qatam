@@ -226,27 +226,38 @@ impl Value {
         }
     }
 
-    pub fn are_numbers(right: &Self, left: &Self) -> bool {
-        match (right, left) {
+    pub fn are_numbers(rhs: &Self, lhs: &Self) -> bool {
+        match (rhs, lhs) {
             (Value::Number(_), Value::Number(_)) => true,
             _ => false,
         }
     }
 
-    pub fn are_subtractable(right: &Self, left: &Self) -> bool {
-        Self::are_numbers(right, left)
+    pub fn are_strings(rhs: &Self, lhs: &Self) -> bool {
+        match (rhs, lhs) {
+            (Value::Object(Object::String(_)), Value::Object(Object::String(_))) => true,
+            _ => false,
+        }
     }
 
-    pub fn are_multipliable(right: &Self, left: &Self) -> bool {
-        Self::are_numbers(right, left)
+    pub fn are_addable(rhs: &Self, lhs: &Self) -> bool {
+        Self::are_numbers(rhs, lhs) || Self::are_strings(rhs, lhs)
     }
 
-    pub fn are_dividable(right: &Self, left: &Self) -> bool {
-        Self::are_numbers(right, left)
+    pub fn are_subtractable(rhs: &Self, lhs: &Self) -> bool {
+        Self::are_numbers(rhs, lhs)
     }
 
-    pub fn are_remainderable(right: &Self, left: &Self) -> bool {
-        Self::are_numbers(right, left)
+    pub fn are_multipliable(rhs: &Self, lhs: &Self) -> bool {
+        Self::are_numbers(rhs, lhs)
+    }
+
+    pub fn are_dividable(rhs: &Self, lhs: &Self) -> bool {
+        Self::are_numbers(rhs, lhs)
+    }
+
+    pub fn are_remainderable(rhs: &Self, lhs: &Self) -> bool {
+        Self::are_numbers(rhs, lhs)
     }
 }
 
@@ -334,7 +345,10 @@ impl ops::Add for Value {
     fn add(self, other: Self) -> Self::Output {
         match (&self, &other) {
             (Self::Number(a), Self::Number(b)) => Self::Number(a + b),
-            _ => Self::Object(Object::String(format!("{}{}", self, other))),
+            (Self::Object(Object::String(a)), Self::Object(Object::String(b))) => {
+                Self::new_string(format!("{a}{b}"))
+            }
+            _ => unreachable!(),
         }
     }
 }

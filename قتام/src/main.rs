@@ -2,13 +2,11 @@ mod args;
 mod ast;
 mod chunk;
 mod compiler;
+mod lexer;
 mod natives;
 mod operators;
 mod parser;
-mod path;
-mod reporter;
 mod token;
-mod tokenizer;
 mod utils;
 mod value;
 mod vm;
@@ -16,7 +14,6 @@ mod vm;
 use args::Mode;
 use compiler::Compiler;
 use parser::Parser;
-use reporter::{CliReporter, Reporter};
 use rustyline::Editor;
 use std::{env, fs, path::PathBuf, process::exit};
 use value::Function;
@@ -41,18 +38,13 @@ fn main() {
 
 fn run_repl() {
     let mut vm = Vm::new(false);
-    let mut reporter = CliReporter::new();
     let mut rl = Editor::<()>::new();
     loop {
-        let readline = rl.readline("قتام \\ ");
+        let readline = rl.readline("> ");
         match readline {
             Ok(line) => {
-                if line.is_empty() {
-                    break;
-                }
-
                 rl.add_history_entry(&line);
-                run_line(&mut vm, &mut reporter, line).ok();
+                run_line(&mut vm, line).ok();
             }
             Err(_) => {
                 break;
@@ -61,31 +53,26 @@ fn run_repl() {
     }
 }
 
-fn run_line(vm: &mut Vm, reporter: &mut dyn Reporter, line: String) -> Result<(), ()> {
-    vm.run(compile(line, None, reporter)?, reporter)
+fn run_line(vm: &mut Vm, line: String) -> Result<(), ()> {
+    vm.run(compile(line, None)?)
 }
 
 fn run_file(path: PathBuf, untrusted: bool) -> Result<(), ()> {
     let mut vm = Vm::new(untrusted);
-    let mut reporter = CliReporter::new();
-    let source = fs::read_to_string(&path).unwrap();
-    vm.run(compile(source, Some(path), &mut reporter)?, &mut reporter)
+    let source = fs::read_to_string(&path).map_err(|err| eprintln!("{err}"))?;
+    vm.run(compile(source, Some(path))?)
 }
 
-fn compile(
-    source: String,
-    path: Option<PathBuf>,
-    reporter: &mut dyn Reporter,
-) -> Result<Function, ()> {
+fn compile(source: String, path: Option<PathBuf>) -> Result<Function, ()> {
     let mut parser = Parser::new(source, path.clone());
-    let ast = parser.parse(reporter)?;
+    let ast = parser.parse()?;
     if cfg!(feature = "debug-ast") {
         for stml in &ast {
-            print!("{:?}", stml);
+            println!("{:?}", stml);
         }
     }
     let mut compiler = Compiler::new(&ast, path);
-    let script = compiler.compile(reporter)?;
+    let script = compiler.compile()?;
     if cfg!(feature = "debug-bytecode") {
         print!("{:?}", script);
     }

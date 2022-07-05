@@ -363,7 +363,6 @@ impl Chunk {
             self.write_instr(Constant16, token);
             self.write_2bytes(idx as u16);
         } else {
-            //TODO find any way to report this error
             return Err(());
         }
 

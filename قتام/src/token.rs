@@ -1,4 +1,4 @@
-use std::{cmp::PartialEq, convert::From, fmt, path::PathBuf, rc::Rc};
+use std::{cmp::PartialEq, convert::From, convert::Into, fmt, path::PathBuf, rc::Rc};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenType {
@@ -100,80 +100,188 @@ pub const BINARY_SET: [TokenType; 6] = [
 
 impl From<TokenType> for usize {
     fn from(typ: TokenType) -> usize {
+        use TokenType::*;
         match typ {
-            TokenType::NewLine => 0,
-            TokenType::OParen => 1,
-            TokenType::CParen => 2,
-            TokenType::OBrace => 3,
-            TokenType::CBrace => 4,
-            TokenType::OBracket => 5,
-            TokenType::CBracket => 6,
-            TokenType::Period => 7,
-            TokenType::Plus => 8,
-            TokenType::Minus => 9,
-            TokenType::Star => 10,
-            TokenType::Slash => 11,
-            TokenType::Percent => 12,
-            TokenType::Comma => 13,
-            TokenType::QuestionMark => 14,
-            TokenType::Colon => 15,
+            NewLine => 0,
+            OParen => 1,
+            CParen => 2,
+            OBrace => 3,
+            CBrace => 4,
+            OBracket => 5,
+            CBracket => 6,
+            Period => 7,
+            Plus => 8,
+            Minus => 9,
+            Star => 10,
+            Slash => 11,
+            Percent => 12,
+            Comma => 13,
+            QuestionMark => 14,
+            Colon => 15,
 
-            TokenType::Equal => 16,
-            TokenType::PlusEqual => 17,
-            TokenType::MinusEqual => 18,
-            TokenType::StarEqual => 19,
-            TokenType::SlashEqual => 20,
-            TokenType::PercentEqual => 21,
-            TokenType::DPlus => 22,
-            TokenType::DMinus => 23,
+            Equal => 16,
+            PlusEqual => 17,
+            MinusEqual => 18,
+            StarEqual => 19,
+            SlashEqual => 20,
+            PercentEqual => 21,
+            DPlus => 22,
+            DMinus => 23,
 
-            TokenType::DEqual => 24,
-            TokenType::Bang => 25,
-            TokenType::BangEqual => 26,
-            TokenType::Greater => 27,
-            TokenType::GreaterEqual => 28,
-            TokenType::Less => 29,
-            TokenType::LessEqual => 30,
-            TokenType::And => 31,
-            TokenType::Or => 32,
+            DEqual => 24,
+            Bang => 25,
+            BangEqual => 26,
+            Greater => 27,
+            GreaterEqual => 28,
+            Less => 29,
+            LessEqual => 30,
+            And => 31,
+            Or => 32,
 
-            TokenType::String => 33,
-            TokenType::UnTermedString => 34,
-            TokenType::Comment => 35,
+            String => 33,
+            UnTermedString => 34,
+            Comment => 35,
 
-            TokenType::Identifier => 36,
-            TokenType::If => 37,
-            TokenType::ElseIf => 38,
-            TokenType::Else => 39,
-            TokenType::Function => 40,
-            TokenType::Var => 41,
-            TokenType::Loop => 42,
-            TokenType::While => 43,
-            TokenType::Break => 44,
-            TokenType::Continue => 45,
-            TokenType::Return => 46,
-            TokenType::Throw => 47,
-            TokenType::Try => 48,
-            TokenType::Catch => 49,
-            TokenType::Nil => 50,
-            TokenType::True => 51,
-            TokenType::False => 52,
-            TokenType::Number => 53,
-            TokenType::InvalidNumber => 54,
+            Identifier => 36,
+            If => 37,
+            ElseIf => 38,
+            Else => 39,
+            Function => 40,
+            Var => 41,
+            Loop => 42,
+            While => 43,
+            Break => 44,
+            Continue => 45,
+            Return => 46,
+            Throw => 47,
+            Try => 48,
+            Catch => 49,
+            Nil => 50,
+            True => 51,
+            False => 52,
+            Number => 53,
+            InvalidNumber => 54,
 
-            TokenType::Import => 55,
-            TokenType::From => 56,
-            TokenType::Export => 57,
-            TokenType::Pipe => 58,
-            TokenType::For => 59,
-            TokenType::In => 60,
-            TokenType::Unknown => 61,
-            TokenType::EOF => 62,
+            Import => 55,
+            From => 56,
+            Export => 57,
+            Pipe => 58,
+            For => 59,
+            In => 60,
+            Unknown => 61,
+            EOF => 62,
         }
     }
 }
 
 pub const NUMBER: usize = 63;
+
+impl Into<&'static str> for TokenType {
+    fn into(self) -> &'static str {
+        use TokenType::*;
+        match self {
+            NewLine => "سطر جديد",
+            OParen => "(",
+            CParen => ")",
+            OBrace => "{",
+            CBrace => "}",
+            OBracket => "]",
+            CBracket => "[",
+            Period => ".",
+            Plus => "+",
+            Minus => "-",
+            Star => "*",
+            Slash => "/",
+            Percent => "%",
+            Comma => "،",
+            QuestionMark => "؟",
+            Colon => ":",
+
+            Equal => "=",
+            PlusEqual => "+=",
+            MinusEqual => "-=",
+            StarEqual => "*=",
+            SlashEqual => "/=",
+            PercentEqual => "%=",
+            DPlus => "++",
+            DMinus => "--",
+
+            DEqual => "==",
+            Bang => "!",
+            BangEqual => "!=",
+            Greater => ">",
+            GreaterEqual => ">=",
+            Less => "<",
+            LessEqual => "<=",
+            And => "&&",
+            Or => "||",
+
+            String => "نص",
+            UnTermedString => "نص غير مغلق",
+            Comment => "تعليق",
+
+            Identifier => "كلمة",
+            If => "إن",
+            ElseIf => "وإن",
+            Else => "إلا",
+            Function => "دالة",
+            Var => "متغير",
+            Loop => "كرر",
+            While => "طالما",
+            Break => "إكسر",
+            Continue => "واصل",
+            Return => "أرجع",
+            Throw => "ألقي",
+            Try => "حاول",
+            Catch => "أمسك",
+            Nil => "عدم",
+            True => "صحيح",
+            False => "خطأ",
+            Number => "رقم",
+            InvalidNumber => "رقم خاطئ",
+
+            Import => "استورد",
+            From => "من",
+            Export => "صدّر",
+            Pipe => "|",
+            For => "لكل",
+            In => "في",
+            Unknown => "حرف غير معروف",
+            EOF => "النهاية",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TokenPos {
+    path: Option<PathBuf>,
+    line: usize,
+    col: usize,
+}
+
+impl TokenPos {
+    fn new(path: &Option<PathBuf>, line: usize, col: usize) -> Self {
+        Self {
+            path: path.clone(),
+            line,
+            col,
+        }
+    }
+}
+
+impl fmt::Display for TokenPos {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let Self { path, line, col } = self;
+
+        if let Some(path) = path {
+            write!(f, "[الملف: {}، ", path.display())?;
+        } else {
+            write!(f, "[")?;
+        }
+
+        write!(f, "السطر: {line}، العمود: {col}]")
+    }
+}
 
 #[derive(Clone)]
 pub struct Token {
@@ -182,20 +290,19 @@ pub struct Token {
     path: Option<PathBuf>,
     pub lexeme: String,
     start: usize,
-    length: usize,
 }
 
 impl fmt::Debug for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (line, col) = self.get_pos();
-        write!(
-            f,
-            "{{\n{3}type: {0:?},\n{3}lexeme: {1},\n{3}path:{2:?},\n{3}line: {line},\n{3}column: {col},\n}}",
-            self.typ,
-            self.lexeme,
-            self.path,
-            " ".repeat(4),
-        )
+        let TokenPos { path, line, col } = self.get_pos();
+        let padding = " ".repeat(4);
+        writeln!(f, "{{")?;
+        writeln!(f, "{padding}type: {:?},", self.typ)?;
+        writeln!(f, "{padding}lexeme: {:?},", self.lexeme)?;
+        writeln!(f, "{padding}path: {path:?},")?;
+        writeln!(f, "{padding}line: {line},")?;
+        writeln!(f, "{padding}col: {col},")?;
+        write!(f, "}}")
     }
 }
 
@@ -206,7 +313,6 @@ impl Token {
         path: &Option<PathBuf>,
         lexeme: String,
         start: usize,
-        length: usize,
     ) -> Self {
         Self {
             typ,
@@ -217,7 +323,6 @@ impl Token {
             },
             lexeme,
             start,
-            length,
         }
     }
 
@@ -228,11 +333,10 @@ impl Token {
             path: None,
             lexeme: "".to_string(),
             start: 0,
-            length: 0,
         }
     }
 
-    pub fn get_pos(&self) -> (usize, usize) {
+    pub fn get_pos(&self) -> TokenPos {
         let mut offset = 0;
         let mut line = 1;
         let mut col = 1;
@@ -248,7 +352,7 @@ impl Token {
                 col += 1;
             }
         }
-        (line, col)
+        TokenPos::new(&self.path, line, col)
     }
 }
 
@@ -263,34 +367,5 @@ impl PartialEq for Token {
             | TokenType::Unknown => self.typ == other.typ && self.lexeme == other.lexeme,
             _ => self.typ == other.typ,
         }
-    }
-}
-
-impl fmt::Display for Token {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (line, col) = self.get_pos();
-        let content = self.source.lines().nth(line - 1).unwrap();
-        let padding = " ".repeat(format!("{line}").len() + 1);
-
-        let mut buffer = String::new();
-        if self.path.is_some() {
-            buffer += padding.as_str();
-            buffer += "|\n";
-            buffer += format!("{line} | {content}\n").as_str();
-            buffer += padding.as_str();
-            buffer += "| ";
-        } else {
-            buffer += format!("{content}\n").as_str();
-        }
-        for _ in 0..col - 1 {
-            buffer += " ";
-        }
-        for _ in 0..self.length {
-            buffer += "~";
-        }
-        if let Some(path) = &self.path {
-            buffer += format!("\n{}", path.display()).as_str();
-        }
-        write!(f, "{}", buffer,)
     }
 }

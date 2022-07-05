@@ -1,5 +1,4 @@
-use super::path::{qatam_path, resolve_path};
-use std::{convert::TryFrom, env::Args, path::PathBuf};
+use std::{convert::TryFrom, env::Args, ffi::OsStr, path::PathBuf};
 
 pub enum Mode {
     Help,
@@ -10,9 +9,14 @@ pub enum Mode {
 
 impl Mode {
     fn new_file(path: String) -> Result<Self, String> {
-        let path = resolve_path(None, &path, qatam_path)?;
+        let path = PathBuf::from(path);
+
+        if Some(OsStr::new("قتام")) != path.extension() {
+            return Err("يجب أن يكون امتداد الملف 'قتام'".to_string());
+        }
+
         Ok(File {
-            path,
+            path: PathBuf::from(path),
             untrusted: false,
         })
     }
@@ -45,7 +49,7 @@ impl TryFrom<Args> for Mode {
                 }
                 "--غير-موثوق" => match &mut mode {
                     File { untrusted, .. } => *untrusted = true,
-                    _ => return Err("استخدام خاطئ ل --غير موثوق".to_string()),
+                    _ => return Err("استخدام خاطئ ل'--غير موثوق'".to_string()),
                 },
                 _ => {}
             }

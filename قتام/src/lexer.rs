@@ -1,7 +1,34 @@
 use super::token::{Token, TokenType};
-use std::{path::PathBuf, rc::Rc};
+use std::{fmt, path::PathBuf, rc::Rc, result};
 
-pub struct Tokenizer {
+pub type Result = result::Result<Token, LexicalError>;
+
+#[derive(Debug, Clone)]
+pub enum LexicalError {
+    Unknown(Token),
+    UnTermedString(Token),
+    InvalidNumber(Token),
+}
+
+impl LexicalError {
+    pub fn get_token(&self) -> &Token {
+        match self {
+            Self::Unknown(token) => token,
+            Self::UnTermedString(token) => token,
+            Self::InvalidNumber(token) => token,
+        }
+    }
+}
+
+impl fmt::Display for LexicalError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let token = self.get_token();
+        let typ: &str = token.typ.to_owned().into();
+        write!(f, "{}، {typ}", token.get_pos())
+    }
+}
+
+pub struct Lexer {
     source: Rc<String>,
     path: Option<PathBuf>,
     start: usize,
@@ -19,7 +46,7 @@ fn is_newline(c: char) -> bool {
     ['\u{000a}', '\u{000d}', '\u{2028}', '\u{2029}'].contains(&c)
 }
 
-impl Tokenizer {
+impl Lexer {
     pub fn new(source: String, path: Option<PathBuf>) -> Self {
         Self {
             source: Rc::new(source),
@@ -91,23 +118,21 @@ impl Tokenizer {
             &self.path,
             lexeme,
             start,
-            length,
         )
     }
 
-    fn pop_token(&mut self, typ: TokenType) -> Token {
+    fn pop_token(&mut self, typ: TokenType) -> Result {
         let start = self.start;
         let length = self.current - self.start;
         let lexeme = self.slice(start, length);
         self.start = self.current;
-        Token::new(
-            typ,
-            Rc::clone(&self.source),
-            &self.path,
-            lexeme,
-            start,
-            length,
-        )
+        let token = Token::new(typ, Rc::clone(&self.source), &self.path, lexeme, start);
+        match typ {
+            TokenType::Unknown => Err(LexicalError::Unknown(token)),
+            TokenType::UnTermedString => Err(LexicalError::UnTermedString(token)),
+            TokenType::InvalidNumber => Err(LexicalError::InvalidNumber(token)),
+            _ => Ok(token),
+        }
     }
 
     fn slice(&self, start: usize, length: usize) -> String {
@@ -118,7 +143,7 @@ impl Tokenizer {
             .collect::<String>()
     }
 
-    fn pop_unknown_token(&mut self) -> Token {
+    fn pop_unknown_token(&mut self) -> Result {
         return self.pop_token(TokenType::Unknown);
     }
 
@@ -134,7 +159,7 @@ impl Tokenizer {
         }
     }
 
-    pub fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> Result {
         self.skip_whitespace();
 
         if let Some(c) = self.next() {
@@ -283,7 +308,7 @@ impl Tokenizer {
                             }
                         }
 
-                        return self.pop_identifier();
+                        return Ok(self.pop_identifier());
                     }
 
                     if c.is_ascii_digit() {
