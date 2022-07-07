@@ -1,0 +1,15 @@
+returncode: 0
+stdout:
+ا
+ل
+س
+ل
+ا
+م
+ 
+ع
+ل
+ي
+ك
+م
+stderr:

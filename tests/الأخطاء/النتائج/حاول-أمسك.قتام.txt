@@ -1,0 +1,5 @@
+returncode: 0
+stdout:
+السلام عليكم
+السلام عليكم
+stderr:
