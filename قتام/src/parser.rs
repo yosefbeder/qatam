@@ -225,6 +225,20 @@ impl Parser {
         Ok(Expr::Literal(Literal::Object(self.props()?)))
     }
 
+    fn lambda(&mut self) -> Result<Expr> {
+        let token = self.clone_previous();
+        if token.typ == TokenType::Or {
+            self.consume(TokenType::OBrace)?;
+            let body = self.block()?;
+            Ok(Expr::Lambda(Rc::new(token), vec![], Box::new(body)))
+        } else {
+            let params = self.params(TokenType::Pipe)?;
+            self.consume(TokenType::OBrace)?;
+            let body = self.block()?;
+            Ok(Expr::Lambda(Rc::new(token), params, Box::new(body)))
+        }
+    }
+
     fn literal(&mut self) -> Result<Expr> {
         let token = self.clone_previous();
         match token.typ {
@@ -235,6 +249,7 @@ impl Parser {
             TokenType::Nil => Ok(Expr::Literal(Literal::Nil(Rc::new(token)))),
             TokenType::OBracket => self.list(),
             TokenType::OBrace => self.object(),
+            TokenType::Pipe | TokenType::Or => self.lambda(),
             _ => unreachable!(),
         }
     }
@@ -253,42 +268,32 @@ impl Parser {
         return Ok(expr);
     }
 
-    fn lambda(&mut self) -> Result<Expr> {
-        let token = self.clone_previous();
-        if token.typ == TokenType::Or {
-            self.consume(TokenType::OBrace)?;
-            let body = self.block()?;
-            Ok(Expr::Lambda(Rc::new(token), vec![], Box::new(body)))
-        } else {
-            let params = self.params(TokenType::Pipe)?;
-            self.consume(TokenType::OBrace)?;
-            let body = self.block()?;
-            Ok(Expr::Lambda(Rc::new(token), params, Box::new(body)))
-        }
-    }
-
     /// Parses any expression with a binding power more than or equal to `min_bp`.
     fn expr(&mut self, min_precedence: u8, mut can_assign: bool) -> Result<Expr> {
         let mut token = self.next()?;
         let mut expr;
 
         expr = match token.typ {
-            TokenType::Identifier
-            | TokenType::Number
+            TokenType::Identifier => self.literal()?,
+            TokenType::Number
             | TokenType::String
             | TokenType::True
             | TokenType::False
             | TokenType::Nil
             | TokenType::OBracket
-            | TokenType::OBrace => self.literal()?,
-            TokenType::Minus | TokenType::Bang => self.unary()?,
+            | TokenType::OBrace
+            | TokenType::Pipe
+            | TokenType::Or => {
+                can_assign = false;
+                self.literal()?
+            }
+            TokenType::Minus | TokenType::Bang => {
+                can_assign = false;
+                self.unary()?
+            }
             TokenType::OParen => {
                 can_assign = false;
                 self.group()?
-            }
-            TokenType::Pipe | TokenType::Or => {
-                can_assign = false;
-                self.lambda()?
             }
             _ => {
                 self.err(Error::Parse(ParseError::ExpectedExpr(token)));
