@@ -122,6 +122,21 @@ pub enum Object {
     File(Rc<RefCell<File>>),
 }
 
+impl PartialEq for Object {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::String(a), Self::String(b)) => a == b,
+            (Self::List(a), Self::List(b)) => Rc::ptr_eq(a, b),
+            (Self::Object(a), Self::Object(b)) => Rc::ptr_eq(a, b),
+            (Self::Function(a), Self::Function(b)) => Rc::ptr_eq(a, b),
+            (Self::Closure(a), Self::Closure(b)) => Rc::ptr_eq(a, b),
+            (Self::Native(a), Self::Native(b)) => *a as usize == *b as usize,
+            (Self::File(a), Self::File(b)) => Rc::ptr_eq(a, b),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum Value {
     Number(f64),
@@ -413,7 +428,7 @@ impl cmp::PartialEq for Value {
             (Self::Number(a), Self::Number(b)) => a == b,
             (Self::Bool(a), Self::Bool(b)) => a == b,
             (Self::Nil, Self::Nil) => true,
-            (Self::Object(Object::String(a)), Self::Object(Object::String(b))) => a == b,
+            (Self::Object(a), Self::Object(b)) => a == b,
             _ => false,
         }
     }
