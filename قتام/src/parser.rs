@@ -260,8 +260,7 @@ impl Parser {
             let body = self.block()?;
             Ok(Expr::Lambda(Rc::new(token), vec![], Box::new(body)))
         } else {
-            let params = self.params()?;
-            self.consume(TokenType::Pipe)?;
+            let params = self.params(TokenType::Pipe)?;
             self.consume(TokenType::OBrace)?;
             let body = self.block()?;
             Ok(Expr::Lambda(Rc::new(token), params, Box::new(body)))
@@ -428,18 +427,18 @@ impl Parser {
         Ok(Rc::new(self.clone_previous()))
     }
 
-    fn params(&mut self) -> Result<Vec<Rc<Token>>> {
-        if self.check_consume(TokenType::CParen) {
+    fn params(&mut self, closing_token: TokenType) -> Result<Vec<Rc<Token>>> {
+        if self.check_consume(closing_token) {
             return Ok(vec![]);
         }
         let mut items = vec![self.identifier()?];
         while self.check_consume(TokenType::Comma) {
-            if self.check_consume(TokenType::CParen) {
+            if self.check_consume(closing_token) {
                 return Ok(items);
             }
             items.push(self.identifier()?);
         }
-        self.consume(TokenType::CParen)?;
+        self.consume(closing_token)?;
         Ok(items)
     }
 
@@ -447,7 +446,7 @@ impl Parser {
         self.consume(TokenType::Identifier)?;
         let name = self.clone_previous();
         self.consume(TokenType::OParen)?;
-        let params = self.params()?;
+        let params = self.params(TokenType::CParen)?;
         self.consume(TokenType::OBrace)?;
         let body = self.block()?;
         Ok(Stml::FunctionDecl(Rc::new(name), params, Box::new(body)))
