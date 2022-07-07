@@ -116,7 +116,7 @@ enum CompilerType {
 #[derive(Debug, Clone)]
 struct Local {
     name: Rc<Token>,
-    depth: u32,
+    depth: usize,
     is_captured: bool,
     is_exported: bool,
 }
@@ -134,7 +134,7 @@ impl UpValue {
 }
 
 impl Local {
-    fn new(name: Rc<Token>, depth: u32) -> Local {
+    fn new(name: Rc<Token>, depth: usize) -> Local {
         Local {
             name,
             depth,
@@ -169,7 +169,7 @@ impl Loop {
 
 #[derive(Debug, Clone)]
 pub struct CompilerState {
-    scope_depth: u32,
+    scope_depth: usize,
     locals: Vec<Local>, //TODO make it limited as the stack is
     up_values: Vec<UpValue>,
     had_err: bool,
@@ -328,6 +328,10 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn scope_depth(&self) -> usize {
+        self.state.borrow().scope_depth
+    }
+
     fn write_const(&mut self, value: Value, token: Rc<Token>) -> Result {
         match self.chunk.write_const(value, Some(Rc::clone(&token))) {
             Ok(_) => Ok(()),
@@ -394,7 +398,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn in_global_scope(&self) -> bool {
-        self.typ == CompilerType::Script && self.state.borrow().scope_depth == 0
+        self.typ == CompilerType::Script && self.scope_depth() == 0
     }
 
     fn in_function(&self) -> bool {
@@ -403,7 +407,7 @@ impl<'a> Compiler<'a> {
 
     /// for both imports and exports
     fn can_import(&self) -> bool {
-        self.typ != CompilerType::Function && self.state.borrow().scope_depth == 0
+        self.typ != CompilerType::Function && self.scope_depth() == 0
     }
 
     fn define_global(&mut self, token: Rc<Token>) -> Result {
@@ -420,7 +424,13 @@ impl<'a> Compiler<'a> {
         let idx = self.state.borrow().resolve_local(Rc::clone(&token));
 
         match idx {
-            Some(_) => Err(self.err(CompileError::SameVarInScope(token))),
+            Some(idx) => {
+                if self.state.borrow().locals[idx].depth == self.scope_depth() {
+                    Err(self.err(CompileError::SameVarInScope(token)))
+                } else {
+                    Ok(self.state.borrow_mut().add_local(token))
+                }
+            }
             None => Ok(self.state.borrow_mut().add_local(token)),
         }
     }
@@ -823,7 +833,7 @@ impl<'a> Compiler<'a> {
         let mut iter = locals.iter().rev();
 
         while let Some(local) = iter.next() {
-            if local.depth == self.state.borrow().scope_depth {
+            if local.depth == self.scope_depth() {
                 self.state.borrow_mut().locals.pop();
                 if local.is_captured {
                     self.chunk.write_instr(CloseUpValue, None);
