@@ -414,7 +414,7 @@ impl Parser {
     fn return_stml(&mut self) -> Result<Stml> {
         let token = self.clone_previous();
         if self.check(TokenType::NewLine) {
-            return Ok(Stml::Throw(Rc::new(token), None));
+            return Ok(Stml::Return(Rc::new(token), None));
         }
         Ok(Stml::Return(Rc::new(token), Some(self.parse_expr()?)))
     }
