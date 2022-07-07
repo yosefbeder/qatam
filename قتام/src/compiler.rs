@@ -58,8 +58,8 @@ impl fmt::Display for CompileError {
                 write!(
                     f,
                     "المتغير '{}' قد تم تعريفيه في نفس المجموعة من قبل {}",
-                    token.get_pos(),
-                    token.lexeme
+                    token.lexeme,
+                    token.get_pos()
                 )
             }
             Self::TooManyParams(token) | Self::TooManyArgs(token) => {
@@ -73,16 +73,16 @@ impl fmt::Display for CompileError {
                 write!(
                     f,
                     "لا يمكن استخدام '{}' خارج الدوال {}",
-                    token.get_pos(),
-                    token.lexeme
+                    token.lexeme,
+                    token.get_pos()
                 )
             }
             Self::InvalidBreak(token) | Self::InvalidContinue(token) => {
                 write!(
                     f,
                     "لا يمكن استخدام '{}' خارج الحلقات التكرارية {}",
-                    token.get_pos(),
-                    token.lexeme
+                    token.lexeme,
+                    token.get_pos()
                 )
             }
             Self::InvalidImport(token) => {
