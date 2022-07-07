@@ -1028,9 +1028,7 @@ impl<'a> Compiler<'a> {
             Stml::Block(stmls) => {
                 self.start_scope();
                 self.define_variable(err)?;
-                for stml in stmls {
-                    self.stml(stml)?;
-                }
+                self.stmls(stmls);
                 self.end_scope();
             }
             _ => unreachable!(),
@@ -1086,9 +1084,7 @@ impl<'a> Compiler<'a> {
         self.chunk.write_instr(Get, None);
         self.define_variable(Rc::clone(&element))?;
 
-        for stml in body.as_block() {
-            self.stml(stml)?;
-        }
+        self.stmls(body.as_block());
 
         increase_counter!();
         self.end_scope();
@@ -1115,9 +1111,7 @@ impl<'a> Compiler<'a> {
             Stml::Throw(token, value) => self.throw_stml(Rc::clone(token), value)?,
             Stml::Block(stmls) => {
                 self.start_scope();
-                for stml in stmls {
-                    self.stml(stml)?;
-                }
+                self.stmls(stmls);
                 self.end_scope();
             }
             Stml::IfElse(condition, if_body, elseifs, else_body) => {
@@ -1139,6 +1133,12 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    pub fn stmls(&mut self, stmls: &Vec<Stml>) {
+        for stml in stmls {
+            self.stml(stml).ok();
+        }
+    }
+
     pub fn compile(&mut self) -> result::Result<Function, ()> {
         if cfg!(feature = "debug-bytecode") && self.typ == CompilerType::Script {
             println!("---");
@@ -1146,9 +1146,7 @@ impl<'a> Compiler<'a> {
             println!("---");
         }
 
-        for stml in self.ast {
-            self.stml(stml).ok();
-        }
+        self.stmls(self.ast);
 
         match self.typ {
             CompilerType::Function => {
