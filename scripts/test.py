@@ -1,49 +1,60 @@
 import sys
-import os
+from os import listdir, getcwd
+from shutil import rmtree
 from pathlib import Path
 import subprocess
 from difflib import Differ
 
-DEFAULT_DIR = Path(__file__).parent.parent.joinpath('tests')
-BIN_DIR = Path(__file__).parent.parent.joinpath("target/release")
+DEFAULT_DIR = Path("tests")
+BIN_DIR = Path("target/release")
 
 
 def serialize(returncode, stdout, stderr):
     return f"returncode: {returncode}\nstdout:\n{stdout}stderr:\n{stderr}"
 
 
-def sync(dir):
+def get_snapshot_path(dir: Path, name: str) -> Path:
+    res = dir.joinpath("النتائج")
+    if not res.is_dir():
+        if res.is_file():
+            res.unlink()
+        res.mkdir()
+    return res.joinpath(f"{name}.txt")
+
+
+def sync(dir: Path):
+    clean(dir)
     try:
-        for name in os.listdir(dir):
+        for name in listdir(dir):
             path = dir.joinpath(name)
             if path.is_dir():
                 sync(path)
             if path.suffix == ".قتام":
                 process = subprocess.run(
-                    [BIN_DIR.joinpath("قتام.exe"), path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
-                snapshotPath = path.with_suffix(".النتيجة")
-                open(snapshotPath, "w", encoding="utf-8").write(
+                    [BIN_DIR.joinpath("قتام.exe"), "--ملف", path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
+                snapshot_path = get_snapshot_path(dir, name)
+                open(snapshot_path, "w", encoding="utf-8").write(
                     serialize(process.returncode, process.stdout, process.stderr))
     except WindowsError as e:
         print(e)
 
 
-def run(dir):
+def run(dir: Path):
     try:
-        for name in os.listdir(dir):
+        for name in listdir(dir):
             path = dir.joinpath(name)
-            if path.is_dir():
+            if path.is_dir() and name != "النتائج":
                 run(path)
             if path.suffix == ".قتام":
-                snapshotPath = path.with_suffix(".النتيجة")
-                if not snapshotPath.exists():
+                snapshot_path = get_snapshot_path(dir, name)
+                if not snapshot_path.exists():
                     raise RuntimeError(
-                        f"The snapshot file {snapshotPath} does not exist\nhint: run the sync subcommand first")
+                        f"The snapshot file {snapshot_path} does not exist\nhint: run the sync subcommand first")
                 process = subprocess.run(
-                    [BIN_DIR.joinpath("قتام.exe"), path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
+                    [BIN_DIR.joinpath("قتام.exe"), "--ملف", path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
                 res = serialize(process.returncode,
                                 process.stdout, process.stderr)
-                snapshot = open(snapshotPath, "r", encoding="utf-8").read(
+                snapshot = open(snapshot_path, "r", encoding="utf-8").read(
                 )
                 if res != snapshot:
                     d = Differ()
@@ -56,14 +67,14 @@ def run(dir):
         print(e)
 
 
-def clean(dir):
+def clean(dir: Path):
     try:
-        for name in os.listdir(dir):
+        for name in listdir(dir):
             path = dir.joinpath(name)
-            if path.is_dir():
+            if path.is_dir() and name == "النتائج":
+                rmtree(path)
+            elif path.is_dir():
                 clean(path)
-            if path.suffix == ".النتيجة":
-                path.unlink()
     except WindowsError as e:
         print(e)
 
@@ -77,7 +88,7 @@ subcommands = {
 
 HELP_MSG = "USAGE: {} <subcommand> dir?\nAvaiable subcommands:\n{}".format(
     sys.argv[0],
-    '\n'.join(map(lambda x: x['desc'], subcommands.values())))
+    '\n'.join(map(lambda x: f"{x[0]}: {x[1]['desc']}", subcommands.items())))
 
 
 def main():
@@ -90,7 +101,7 @@ def main():
         return
     if subcommands.get(subcommand) is not None:
         try:
-            dir = Path(os.getcwd()).joinpath(next(argvIter))
+            dir = Path(getcwd()).joinpath(next(argvIter))
         except StopIteration:
             dir = DEFAULT_DIR
         try:

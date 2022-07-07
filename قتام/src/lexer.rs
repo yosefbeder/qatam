@@ -22,7 +22,7 @@ impl fmt::Display for LexicalError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let token = self.get_token();
         let typ: &str = token.typ.to_owned().into();
-        write!(f, "{}، {typ}", token.get_pos())
+        write!(f, "{typ} {}", token.get_pos())
     }
 }
 
