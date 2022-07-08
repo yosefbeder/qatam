@@ -1,6 +1,5 @@
-import { basicSetup } from '@codemirror/basic-setup';
-import { EditorState, Compartment } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
+import { basicSetup, EditorView } from 'codemirror';
+import { Compartment, EditorState } from '@codemirror/state';
 import { qatam } from 'codemirror-lang-qatam';
 
 import { basicLight } from 'cm6-theme-basic-light';
@@ -30,7 +29,6 @@ const THEMES = {
 
 const style = EditorView.theme({
   '&': {
-    height: '300px',
     fontSize: '1rem',
     margin: '1rem 0',
     borderRadius: '.25rem',
