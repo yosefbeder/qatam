@@ -401,14 +401,14 @@ impl Parser {
     }
 
     fn block(&mut self) -> Result<Stml> {
-        let mut decls = vec![];
+        let mut stmls = vec![];
         if !self.check(TokenType::CBrace) {
             while !self.at_end() && !self.check(TokenType::CBrace) {
-                decls.push(self.decl()?);
+                stmls.push(self.stml()?);
             }
         };
         self.consume(TokenType::CBrace)?;
-        Ok(Stml::Block(decls))
+        Ok(Stml::Block(stmls))
     }
 
     fn return_stml(&mut self) -> Result<Stml> {
@@ -565,8 +565,44 @@ impl Parser {
         ))
     }
 
+    fn import_stml(&mut self) -> Result<Stml> {
+        self.consume(TokenType::Identifier)?;
+        let name = self.clone_previous();
+        self.consume(TokenType::From)?;
+        self.consume(TokenType::String)?;
+        Ok(Stml::Import(Rc::new(name), Rc::new(self.clone_previous())))
+    }
+
+    fn export_stml(&mut self) -> Result<Stml> {
+        let token = self.clone_previous();
+
+        if self.check_consume(TokenType::Function) {
+            Ok(Stml::Export(
+                Rc::new(token),
+                Box::new(self.function_decl()?),
+            ))
+        } else if self.check_consume(TokenType::Var) {
+            Ok(Stml::Export(Rc::new(token), Box::new(self.var_decl()?)))
+        } else {
+            let token = self.current_token().clone();
+            self.err(Error::Parse(ParseError::ExpectedInstead(
+                vec![TokenType::Function, TokenType::Var],
+                token,
+            )));
+            Err(())
+        }
+    }
+
     fn stml(&mut self) -> Result<Stml> {
-        if self.check_consume(TokenType::While) {
+        if self.check_consume(TokenType::Function) {
+            self.function_decl()
+        } else if self.check_consume(TokenType::Var) {
+            self.var_decl()
+        } else if self.check_consume(TokenType::Export) {
+            self.export_stml()
+        } else if self.check_consume(TokenType::Import) {
+            self.import_stml()
+        } else if self.check_consume(TokenType::While) {
             self.while_stml()
         } else if self.check_consume(TokenType::Loop) {
             self.loop_stml()
@@ -591,48 +627,6 @@ impl Parser {
         }
     }
 
-    fn imported_decl(&mut self) -> Result<Stml> {
-        self.consume(TokenType::Identifier)?;
-        let name = self.clone_previous();
-        self.consume(TokenType::From)?;
-        self.consume(TokenType::String)?;
-        Ok(Stml::Import(Rc::new(name), Rc::new(self.clone_previous())))
-    }
-
-    fn exported_decl(&mut self) -> Result<Stml> {
-        let token = self.clone_previous();
-
-        if self.check_consume(TokenType::Function) {
-            Ok(Stml::Export(
-                Rc::new(token),
-                Box::new(self.function_decl()?),
-            ))
-        } else if self.check_consume(TokenType::Var) {
-            Ok(Stml::Export(Rc::new(token), Box::new(self.var_decl()?)))
-        } else {
-            let token = self.current_token().clone();
-            self.err(Error::Parse(ParseError::ExpectedInstead(
-                vec![TokenType::Function, TokenType::Var],
-                token,
-            )));
-            Err(())
-        }
-    }
-
-    fn decl(&mut self) -> Result<Stml> {
-        if self.check_consume(TokenType::Function) {
-            self.function_decl()
-        } else if self.check_consume(TokenType::Var) {
-            self.var_decl()
-        } else if self.check_consume(TokenType::Export) {
-            self.exported_decl()
-        } else if self.check_consume(TokenType::Import) {
-            self.imported_decl()
-        } else {
-            self.stml()
-        }
-    }
-
     fn sync(&mut self) {
         while !self.check(TokenType::EOF) {
             if BOUNDARIES.contains(&self.peek(true).typ) {
@@ -653,10 +647,10 @@ impl Parser {
             println!("---");
         }
 
-        let mut decls = vec![];
+        let mut stmls = vec![];
         while !self.at_end() {
-            match self.decl() {
-                Ok(decl) => decls.push(decl),
+            match self.stml() {
+                Ok(stml) => stmls.push(stml),
                 Err(_) => {
                     self.sync();
                 }
@@ -665,7 +659,7 @@ impl Parser {
         if self.had_err {
             Err(())
         } else {
-            Ok(decls)
+            Ok(stmls)
         }
     }
 }
