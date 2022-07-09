@@ -20,7 +20,7 @@ pub enum Expr {
     Call(Rc<Token>, Box<Expr>, Vec<Expr>),
     Get(Rc<Token>, Box<Expr>, Box<Expr>),
     Set(Rc<Token>, Box<Expr>, Box<Expr>, Box<Expr>),
-    Lambda(Rc<Token>, Vec<Rc<Token>>, Box<Stml>),
+    Lambda(Rc<Token>, Vec<Expr>, Box<Stml>),
 }
 
 impl Expr {
@@ -35,8 +35,8 @@ impl Expr {
 #[derive(Debug)]
 pub enum Stml {
     Block(Vec<Stml>),
-    FunctionDecl(Rc<Token>, Vec<Rc<Token>>, Box<Stml>),
-    VarDecl(Rc<Token>, Rc<Token>, Option<Expr>),
+    FunctionDecl(Rc<Token>, Vec<Expr>, Box<Stml>),
+    VarDecl(Rc<Token>, Expr, Option<Expr>),
     Return(Rc<Token>, Option<Expr>),
     Throw(Rc<Token>, Option<Expr>),
     TryCatch(Box<Stml>, Rc<Token>, Box<Stml>),
@@ -45,9 +45,9 @@ pub enum Stml {
     Loop(Box<Stml>),
     Break(Rc<Token>),
     Continue(Rc<Token>),
-    Import(Rc<Token>, Rc<Token>),
+    Import(Rc<Token>, Expr, Rc<Token>),
     Export(Rc<Token>, Box<Stml>),
-    ForIn(Rc<Token>, Rc<Token>, Expr, Box<Stml>),
+    ForIn(Rc<Token>, Expr, Expr, Box<Stml>),
     Expr(Expr),
 }
 

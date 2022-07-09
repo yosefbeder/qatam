@@ -435,21 +435,16 @@ impl Parser {
         Ok(Stml::Throw(Rc::new(token), Some(self.parse_expr()?)))
     }
 
-    fn identifier(&mut self) -> Result<Rc<Token>> {
-        self.consume(TokenType::Identifier)?;
-        Ok(Rc::new(self.clone_previous()))
-    }
-
-    fn params(&mut self, closing_token: TokenType) -> Result<Vec<Rc<Token>>> {
+    fn params(&mut self, closing_token: TokenType) -> Result<Vec<Expr>> {
         if self.check_consume(closing_token) {
             return Ok(vec![]);
         }
-        let mut items = vec![self.identifier()?];
+        let mut items = vec![self.definable()?];
         while self.check_consume(TokenType::Comma) {
             if self.check_consume(closing_token) {
                 return Ok(items);
             }
-            items.push(self.identifier()?);
+            items.push(self.definable()?);
         }
         self.consume(closing_token)?;
         Ok(items)
@@ -543,23 +538,41 @@ impl Parser {
         ))
     }
 
+    fn definable(&mut self) -> Result<Expr> {
+        Ok(if self.check_consume(TokenType::Identifier) {
+            Expr::Variable(Rc::new(self.clone_previous()))
+        } else if self.check_consume(TokenType::OBracket) {
+            self.list()?
+        } else if self.check_consume(TokenType::OBrace) {
+            self.object()?
+        } else {
+            self.err(Error::Parse(ParseError::ExpectedInstead(
+                vec![
+                    TokenType::Identifier,
+                    TokenType::OBracket,
+                    TokenType::OBrace,
+                ],
+                self.current_token().clone(),
+            )));
+            return Err(());
+        })
+    }
+
     fn var_decl(&mut self) -> Result<Stml> {
         let token = self.clone_previous();
-        self.consume(TokenType::Identifier)?;
-        let name = self.clone_previous();
+        let definable = self.definable()?;
         let initializer = if self.check_consume(TokenType::Equal) {
             Some(self.parse_expr()?)
         } else {
             None
         };
-        Ok(Stml::VarDecl(Rc::new(token), Rc::new(name), initializer))
+        Ok(Stml::VarDecl(Rc::new(token), definable, initializer))
     }
 
     fn for_in(&mut self) -> Result<Stml> {
         let token = self.clone_previous();
         self.consume(TokenType::OParen)?;
-        self.consume(TokenType::Identifier)?;
-        let element = self.clone_previous();
+        let definable = self.definable()?;
         self.consume(TokenType::In)?;
         let iterable = self.parse_expr()?;
         self.consume(TokenType::CParen)?;
@@ -567,18 +580,22 @@ impl Parser {
         let body = self.block()?;
         Ok(Stml::ForIn(
             Rc::new(token),
-            Rc::new(element),
+            definable,
             iterable,
             Box::new(body),
         ))
     }
 
     fn import_stml(&mut self) -> Result<Stml> {
-        self.consume(TokenType::Identifier)?;
-        let name = self.clone_previous();
+        let token = self.clone_previous();
+        let definable = self.definable()?;
         self.consume(TokenType::From)?;
         self.consume(TokenType::String)?;
-        Ok(Stml::Import(Rc::new(name), Rc::new(self.clone_previous())))
+        Ok(Stml::Import(
+            Rc::new(token),
+            definable,
+            Rc::new(self.clone_previous()),
+        ))
     }
 
     fn export_stml(&mut self) -> Result<Stml> {

@@ -25,6 +25,7 @@ enum CompileError {
     InvalidExport(Rc<Token>),
     InvalidImportExt(Rc<Token>),
     IOError(Rc<Token>, IOError),
+    InvalidDefinable(Rc<Token>),
 }
 
 impl fmt::Display for CompileError {
@@ -101,6 +102,13 @@ impl fmt::Display for CompileError {
             Self::IOError(token, err) => {
                 writeln!(f, "حدث خطأ من نظام التشغيل {}", token.get_pos())?;
                 write!(f, "{err}")
+            }
+            Self::InvalidDefinable(token) => {
+                write!(
+                    f,
+                    "في التوزيع يجب أن تكون العناصر المنتجة كلمات أو قوائم أو كائنات {}",
+                    token.get_pos()
+                )
             }
         }
     }
@@ -712,11 +720,11 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn lambda(&mut self, token: Rc<Token>, params: &Vec<Rc<Token>>, body: &Box<Stml>) -> Result {
+    fn lambda(&mut self, token: Rc<Token>, params: &Vec<Expr>, body: &Box<Stml>) -> Result {
         let mut compiler =
             Compiler::new_function(None, body, Rc::clone(&self.state), self.path.clone());
         compiler.define_variable(Rc::new(Token::new_empty()))?;
-        compiler.define_params(params)?;
+        compiler.define_params(params, Rc::clone(&token))?;
         self.write_closure(
             compiler.compile().map_err(|_| {
                 self.state.borrow_mut().had_err = true;
@@ -743,24 +751,20 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn define_params(&mut self, params: &Vec<Rc<Token>>) -> Result {
-        if self.typ == CompilerType::Script {
-            unreachable!();
-        }
-
+    fn define_params(&mut self, params: &Vec<Expr>, token: Rc<Token>) -> Result {
         for param in params {
             if self.arity == 0xff {
-                self.err(CompileError::TooManyParams(Rc::clone(param)));
+                self.err(CompileError::TooManyParams(token));
                 return Err(());
             }
-            self.define_variable(Rc::clone(param))?;
+            self.definable(param, Rc::clone(&token), true)?;
             self.arity += 1;
         }
 
         Ok(())
     }
 
-    fn function_decl(&mut self, name: Rc<Token>, params: &Vec<Rc<Token>>, body: &Stml) -> Result {
+    fn function_decl(&mut self, name: Rc<Token>, params: &Vec<Expr>, body: &Stml) -> Result {
         let mut compiler = Compiler::new_function(
             Some(name.lexeme.clone()),
             body,
@@ -768,7 +772,7 @@ impl<'a> Compiler<'a> {
             self.path.clone(),
         );
         compiler.define_variable(Rc::clone(&name))?;
-        compiler.define_params(params)?;
+        compiler.define_params(params, Rc::clone(&name))?;
         self.write_closure(
             compiler.compile().map_err(|_| {
                 self.state.borrow_mut().had_err = true;
@@ -779,19 +783,69 @@ impl<'a> Compiler<'a> {
         self.define_variable(name)?;
         Ok(())
     }
+
+    fn definable(&mut self, definable: &Expr, token: Rc<Token>, should_flush: bool) -> Result {
+        macro_rules! define {
+            ($token:ident) => {{
+                if self.in_global_scope() {
+                    self.define_global(Rc::clone(&$token))?;
+                } else {
+                    self.define_local(Rc::clone(&$token))?;
+                    self.chunk.write_instr(PushTmp, None);
+                }
+            }};
+        }
+
+        match definable {
+            Expr::Variable(token) => define!(token),
+            Expr::Literal(Literal::List(exprs)) => {
+                self.chunk.write_instr(UnpackList, Some(Rc::clone(&token)));
+                self.chunk.write_byte(exprs.len() as u8);
+                for expr in exprs.iter().rev() {
+                    self.definable(expr, Rc::clone(&token), false)?;
+                }
+            }
+            Expr::Literal(Literal::Object(props)) => {
+                for (key, _) in props {
+                    self.write_const(Value::new_string(key.lexeme.clone()), Rc::clone(key))?;
+                }
+                self.chunk
+                    .write_instr(UnpackObject, Some(Rc::clone(&token)));
+                self.chunk.write_byte(props.len() as u8);
+                for (key, expr) in props {
+                    match expr {
+                        Some(definable) => {
+                            self.definable(definable, Rc::clone(&token), false)?;
+                        }
+                        None => define!(key),
+                    }
+                }
+            }
+            _ => {
+                self.err(CompileError::InvalidDefinable(token));
+                return Err(());
+            }
+        };
+        if should_flush {
+            self.chunk.write_instr(FlushTmps, None);
+        }
+        Ok(())
+    }
+
     fn var_decl(
         &mut self,
         token: Rc<Token>,
-        name: Rc<Token>,
+        definable: &Expr,
         initializer: &Option<Expr>,
     ) -> Result {
         match initializer {
             Some(expr) => self.expr(expr)?,
             None => {
-                self.write_const(Value::Nil, token)?;
+                self.write_const(Value::Nil, Rc::clone(&token))?;
             }
         };
-        self.define_variable(Rc::clone(&name))
+        self.definable(definable, token, true)?;
+        Ok(())
     }
 
     fn return_stml(&mut self, token: Rc<Token>, value: &Option<Expr>) -> Result {
@@ -946,18 +1000,18 @@ impl<'a> Compiler<'a> {
 
     /// creates a path out of the path of the current compiler and the string stored in token
     fn path(&mut self, token: Rc<Token>) -> result::Result<PathBuf, ()> {
-        let temp = self.string(token)?;
+        let tmp = self.string(token)?;
         if let Some(cur_path) = &self.path {
             if let Some(dir) = cur_path.parent() {
-                return Ok(dir.join(temp));
+                return Ok(dir.join(tmp));
             }
         }
-        Ok(PathBuf::from(temp))
+        Ok(PathBuf::from(tmp))
     }
 
-    fn import_stml(&mut self, name: Rc<Token>, path_token: Rc<Token>) -> Result {
+    fn import_stml(&mut self, token: Rc<Token>, definable: &Expr, path_token: Rc<Token>) -> Result {
         if !self.can_import() {
-            self.err(CompileError::InvalidImport(name));
+            self.err(CompileError::InvalidImport(token));
             return Err(());
         }
 
@@ -980,11 +1034,11 @@ impl<'a> Compiler<'a> {
                 self.state.borrow_mut().had_err = true;
             })?,
             &compiler.state.borrow().up_values,
-            Rc::clone(&name),
+            Rc::clone(&token),
         )?;
-        self.chunk.write_instr(Call, Some(Rc::clone(&name)));
+        self.chunk.write_instr(Call, Some(Rc::clone(&token)));
         self.chunk.write_byte(0u8);
-        self.define_variable(name)
+        self.definable(definable, token, true)
     }
 
     pub fn export_stml(&mut self, token: Rc<Token>, stml: &Stml) -> Result {
@@ -1003,8 +1057,8 @@ impl<'a> Compiler<'a> {
                     }
                 }
             }
-            Stml::VarDecl(token, name, initializer) => {
-                self.var_decl(Rc::clone(token), Rc::clone(name), initializer)?;
+            Stml::VarDecl(token, definable, initializer) => {
+                self.var_decl(Rc::clone(token), definable, initializer)?;
             }
             _ => unreachable!(),
         };
@@ -1041,7 +1095,7 @@ impl<'a> Compiler<'a> {
     fn for_in_stml(
         &mut self,
         token: Rc<Token>,
-        element: Rc<Token>,
+        definable: &Expr,
         iterator: &Expr,
         body: &Box<Stml>,
     ) -> Result {
@@ -1070,7 +1124,7 @@ impl<'a> Compiler<'a> {
         // 2. Check the next element
         let start = self.chunk.len();
         self.expr(iterator)?;
-        self.chunk.write_instr(Size, Some(Rc::clone(&element))); //TODO find a better token to report this err
+        self.chunk.write_instr(Size, Some(Rc::clone(&token))); //TODO find a better token to report this err
         get_counter!();
         self.chunk.write_instr(Greater, None);
 
@@ -1082,7 +1136,7 @@ impl<'a> Compiler<'a> {
         self.expr(iterator)?;
         get_counter!();
         self.chunk.write_instr(Get, None);
-        self.define_variable(Rc::clone(&element))?;
+        self.definable(definable, Rc::clone(&token), true)?;
 
         self.stmls(body.as_block());
 
@@ -1104,8 +1158,8 @@ impl<'a> Compiler<'a> {
             Stml::FunctionDecl(name, params, body) => {
                 self.function_decl(Rc::clone(name), params, body)?
             }
-            Stml::VarDecl(token, name, initializer) => {
-                self.var_decl(Rc::clone(token), Rc::clone(name), initializer)?;
+            Stml::VarDecl(token, definable, initializer) => {
+                self.var_decl(Rc::clone(token), definable, initializer)?;
             }
             Stml::Return(token, value) => self.return_stml(Rc::clone(token), value)?,
             Stml::Throw(token, value) => self.throw_stml(Rc::clone(token), value)?,
@@ -1121,13 +1175,15 @@ impl<'a> Compiler<'a> {
             Stml::Loop(body) => self.loop_stml(body)?,
             Stml::Break(token) => self.break_stml(Rc::clone(token))?,
             Stml::Continue(token) => self.continue_stml(Rc::clone(token))?,
-            Stml::Import(name, path) => self.import_stml(Rc::clone(name), Rc::clone(path))?,
+            Stml::Import(token, definable, path) => {
+                self.import_stml(Rc::clone(token), definable, Rc::clone(path))?
+            }
             Stml::Export(token, stml) => self.export_stml(Rc::clone(token), stml)?,
             Stml::TryCatch(try_block, err, catch_block) => {
                 self.try_catch_stml(try_block, Rc::clone(err), catch_block)?
             }
-            Stml::ForIn(token, element, iterator, body) => {
-                self.for_in_stml(Rc::clone(token), Rc::clone(element), iterator, body)?
+            Stml::ForIn(token, definable, iterator, body) => {
+                self.for_in_stml(Rc::clone(token), definable, iterator, body)?
             }
         }
         Ok(())
