@@ -50,6 +50,10 @@ pub enum Instruction {
     PopHandler,
     Throw,
     Size,
+    UnpackList,
+    UnpackObject,
+    PushTmp,
+    FlushTmps,
     Unknown,
 }
 
@@ -96,7 +100,11 @@ impl Into<u8> for Instruction {
             PopHandler => 35,
             Throw => 36,
             Size => 37,
-            Unknown => 38,
+            UnpackList => 38,
+            UnpackObject => 39,
+            PushTmp => 40,
+            FlushTmps => 41,
+            Unknown => 42,
         }
     }
 }
@@ -142,6 +150,10 @@ impl From<u8> for Instruction {
             35 => PopHandler,
             36 => Throw,
             37 => Size,
+            38 => UnpackList,
+            39 => UnpackObject,
+            40 => PushTmp,
+            41 => FlushTmps,
             _ => Unknown,
         }
     }
@@ -188,6 +200,10 @@ impl fmt::Debug for Instruction {
             PopHandler => "POP_HANDLER",
             Throw => "THROW",
             Size => "SIZE",
+            UnpackList => "UNPACK_LIST",
+            UnpackObject => "UNPACK_OBJECT",
+            PushTmp => "PUSH_TMP",
+            FlushTmps => "FLUSH_TMPS",
             Unknown => "UNKNOWN",
         };
 
@@ -238,7 +254,8 @@ impl Chunk {
         match instr {
             Pop | Negate | Add | Subtract | Multiply | Divide | Remainder | Not | Equal
             | Greater | GreaterEqual | Less | LessEqual | Return | GetGlobal | SetGlobal
-            | DefineGlobal | Get | Set | CloseUpValue | PopHandler | Throw | Size => {
+            | DefineGlobal | Get | Set | CloseUpValue | PopHandler | Throw | Size | PushTmp
+            | FlushTmps => {
                 buffer += "\n";
                 return (buffer, 1);
             }
@@ -275,7 +292,8 @@ impl Chunk {
                 buffer += format!("{}\n", size).as_str();
                 return (buffer, 3);
             }
-            Call | GetLocal | SetLocal | GetUpValue | SetUpValue | BuildList | BuildObject => {
+            Call | GetLocal | SetLocal | GetUpValue | SetUpValue | BuildList | BuildObject
+            | UnpackList | UnpackObject => {
                 let oper = self.bytes[offset + 1] as usize;
                 buffer += format!("{}\n", oper).as_str();
                 return (buffer, 2);

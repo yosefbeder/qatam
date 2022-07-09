@@ -68,7 +68,7 @@ fn compile(source: String, path: Option<PathBuf>) -> Result<Function, ()> {
     let ast = parser.parse()?;
     if cfg!(feature = "debug-ast") {
         for stml in &ast {
-            println!("{:?}", stml);
+            println!("{:#?}", stml);
         }
     }
     let mut compiler = Compiler::new(&ast, path);

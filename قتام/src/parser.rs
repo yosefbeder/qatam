@@ -91,6 +91,14 @@ impl Parser {
         eprintln!("{err}");
     }
 
+    fn lexical_err(&mut self, err: LexicalError) {
+        self.err(Error::Lexical(err))
+    }
+
+    fn parse_err(&mut self, err: ParseError) {
+        self.err(Error::Parse(err))
+    }
+
     fn current_token(&self) -> &Token {
         match &self.current {
             Ok(token) => token,
@@ -102,7 +110,7 @@ impl Parser {
     fn advance(&mut self) -> Result<()> {
         loop {
             if let Err(err) = self.current.clone() {
-                self.err(Error::Lexical(err));
+                self.lexical_err(err);
                 self.current = self.lexer.next_token();
                 return Err(());
             }
@@ -161,7 +169,7 @@ impl Parser {
             Ok(())
         } else {
             let token = self.current_token().clone();
-            self.err(Error::Parse(ParseError::ExpectedInstead(vec![typ], token)));
+            self.parse_err(ParseError::ExpectedInstead(vec![typ], token));
             Err(())
         }
     }
@@ -296,7 +304,7 @@ impl Parser {
                 self.group()?
             }
             _ => {
-                self.err(Error::Parse(ParseError::ExpectedExpr(token)));
+                self.parse_err(ParseError::ExpectedExpr(token));
                 return Err(());
             }
         };
@@ -320,7 +328,7 @@ impl Parser {
                 self.advance()?;
 
                 if token.typ == TokenType::Equal && !can_assign {
-                    self.err(Error::Parse(ParseError::InvalidRhs(token.clone())));
+                    self.parse_err(ParseError::InvalidRhs(token.clone()));
                 }
 
                 expr = Expr::Binary(
@@ -357,7 +365,7 @@ impl Parser {
                         if BINARY_SET.contains(&self.peek(true).typ) {
                             token = self.next()?;
                             if !can_assign {
-                                self.err(Error::Parse(ParseError::InvalidRhs(token.clone())));
+                                self.parse_err(ParseError::InvalidRhs(token.clone()));
                             }
                             expr = Expr::Set(
                                 Rc::new(token),
@@ -377,7 +385,7 @@ impl Parser {
                             let infix_precedence = OPERATORS[row].1.unwrap();
                             token = self.next()?;
                             if !can_assign {
-                                self.err(Error::Parse(ParseError::InvalidRhs(token.clone())));
+                                self.parse_err(ParseError::InvalidRhs(token.clone()));
                             }
                             expr = Expr::Set(
                                 Rc::new(token),
@@ -585,10 +593,10 @@ impl Parser {
             Ok(Stml::Export(Rc::new(token), Box::new(self.var_decl()?)))
         } else {
             let token = self.current_token().clone();
-            self.err(Error::Parse(ParseError::ExpectedInstead(
+            self.parse_err(ParseError::ExpectedInstead(
                 vec![TokenType::Function, TokenType::Var],
                 token,
-            )));
+            ));
             Err(())
         }
     }

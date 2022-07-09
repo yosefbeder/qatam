@@ -84,6 +84,7 @@ impl fmt::Display for RuntimeError {
 
 pub struct Vm {
     stack: Vec<Value>,
+    tmps: Vec<Value>,
     globals: HashMap<String, Value>,
     open_up_values: Vec<Rc<RefCell<UpValue>>>,
     created_at: SystemTime,
@@ -94,6 +95,7 @@ impl Vm {
     pub fn new(untrusted: bool) -> Self {
         let mut vm = Self {
             stack: vec![],
+            tmps: vec![],
             globals: HashMap::new(),
             open_up_values: vec![],
             created_at: SystemTime::now(),
@@ -922,6 +924,61 @@ impl<'a, 'b> Frame<'a, 'b> {
                         }
                         _ => return Err(self.string_to_err("يجب أن يكون نصاً أو قائمة".to_string())),
                     }
+                }
+                UnpackList => {
+                    let len = self.read_byte();
+                    let popped = self.pop();
+
+                    match &popped {
+                        Value::Object(Object::List(items)) => {
+                            if items.borrow().len() != len {
+                                return Err(self.string_to_err("يجب أن يكون عدد العناصر التي ستوزع مساوياً لعدد عناصر الموزع منه".to_string()));
+                            }
+                            for item in items.borrow().clone() {
+                                self.push(item);
+                            }
+                        }
+                        _ => {
+                            return Err(self.string_to_err(
+                                "يجب أن تكون القيمة التي ستوزع باستخدام '[]' قائمةً".to_string(),
+                            ))
+                        }
+                    }
+                    progress = 2;
+                }
+                UnpackObject => {
+                    let stack_len = self.get_state().stack.len();
+                    let len = self.read_byte();
+                    let keys: Vec<_> = self
+                        .get_state_mut()
+                        .stack
+                        .drain(stack_len - len..)
+                        .map(|value| value.as_string())
+                        .collect();
+                    let items = match self.pop() {
+                        Value::Object(Object::Object(items)) => items,
+                        _ => {
+                            return Err(self.string_to_err(
+                                "يجب أن تكون القيمة التي ستوزع باستخدام '{}' كائناً".to_string(),
+                            ))
+                        }
+                    };
+                    for key in keys.iter().rev() {
+                        if !items.borrow().contains_key(key) {
+                            return Err(self.string_to_err(format!("{key} غير موجود في الكائن")));
+                        }
+                        self.push(items.borrow()[key].clone())
+                    }
+                    progress = 2;
+                }
+                PushTmp => {
+                    let popped = self.pop();
+                    self.get_state_mut().tmps.push(popped)
+                }
+                FlushTmps => {
+                    let mut tmps = vec![];
+                    tmps.append(&mut self.get_state_mut().tmps);
+                    self.get_state_mut().stack.append(&mut tmps)
                 }
                 Unknown => unreachable!(),
             }
