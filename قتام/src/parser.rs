@@ -559,10 +559,15 @@ impl Parser {
     fn var_decl(&mut self) -> Result<Stml> {
         let token = self.clone_previous();
         let definable = self.definable()?;
-        let initializer = if self.check_consume(TokenType::Equal) {
+        let initializer = if !definable.is_variable() {
+            self.consume(TokenType::Equal)?;
             Some(self.parse_expr()?)
         } else {
-            None
+            if self.check_consume(TokenType::Equal) {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            }
         };
         Ok(Stml::VarDecl(Rc::new(token), definable, initializer))
     }

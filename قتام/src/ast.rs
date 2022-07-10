@@ -30,6 +30,13 @@ impl Expr {
             _ => unreachable!(),
         }
     }
+
+    pub fn is_variable(&self) -> bool {
+        match self {
+            Self::Variable(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug)]
