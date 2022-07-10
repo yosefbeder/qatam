@@ -25,7 +25,7 @@ enum CompileError {
     InvalidExport(Rc<Token>),
     InvalidImportExt(Rc<Token>),
     IOError(Rc<Token>, IOError),
-    InvalidDefinable(Rc<Token>),
+    InvalidDestructure(Rc<Token>),
 }
 
 impl fmt::Display for CompileError {
@@ -103,7 +103,7 @@ impl fmt::Display for CompileError {
                 writeln!(f, "حدث خطأ من نظام التشغيل {}", token.get_pos())?;
                 write!(f, "{err}")
             }
-            Self::InvalidDefinable(token) => {
+            Self::InvalidDestructure(token) => {
                 write!(
                     f,
                     "في التوزيع يجب أن تكون العناصر المنتجة كلمات أو قوائم أو كائنات {}",
@@ -457,34 +457,39 @@ impl<'a> Compiler<'a> {
         return Ok(());
     }
 
+    fn set_local(&mut self, token: Rc<Token>) -> Result {
+        let idx = self.state.borrow().resolve_local(Rc::clone(&token));
+        if let Some(idx) = idx {
+            self.chunk.write_instr(SetLocal, Some(Rc::clone(&token)));
+            self.chunk.write_byte(idx as u8);
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    fn set_upvalue(&mut self, token: Rc<Token>) -> Result {
+        let idx = self.state.borrow_mut().resolve_up_value(Rc::clone(&token));
+        if let Some(idx) = idx {
+            self.chunk.write_instr(SetUpValue, Some(Rc::clone(&token)));
+            self.chunk.write_byte(idx as u8);
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
     fn set_variable(&mut self, token: Rc<Token>) -> Result {
         if self.in_global_scope() {
             return self.set_global(Rc::clone(&token));
         }
 
-        let state = self.state.borrow();
-        match state.resolve_local(Rc::clone(&token)) {
-            Some(idx) => {
-                self.chunk.write_instr(SetLocal, Some(Rc::clone(&token)));
-                self.chunk.write_byte(idx as u8);
-                return Ok(());
-            }
-            _ => {}
+        if self.set_local(Rc::clone(&token)).is_ok() || self.set_upvalue(Rc::clone(&token)).is_ok()
+        {
+            return Ok(());
         }
-        drop(state);
 
-        let mut state = self.state.borrow_mut();
-        match state.resolve_up_value(Rc::clone(&token)) {
-            Some(idx) => {
-                self.chunk.write_instr(SetUpValue, Some(Rc::clone(&token)));
-                self.chunk.write_byte(idx as u8);
-                return Ok(());
-            }
-            _ => {}
-        }
-        drop(state);
-
-        self.set_global(Rc::clone(&token))
+        self.set_global(token)
     }
 
     fn get_variable(&mut self, token: Rc<Token>) -> Result {
@@ -599,7 +604,8 @@ impl<'a> Compiler<'a> {
         match op.typ {
             TokenType::Equal => {
                 self.expr(rhs)?;
-                self.set_variable(lhs.as_variable().clone())?;
+                self.chunk.write_instr(CloneTop, None);
+                self.settable(lhs, op)?;
                 return Ok(());
             }
             TokenType::PlusEqual => set_and!(Add),
@@ -822,13 +828,57 @@ impl<'a> Compiler<'a> {
                 }
             }
             _ => {
-                self.err(CompileError::InvalidDefinable(token));
+                self.err(CompileError::InvalidDestructure(token));
                 return Err(());
             }
         };
+
         if should_flush {
             self.chunk.write_instr(FlushTmps, None);
         }
+
+        Ok(())
+    }
+
+    fn settable(&mut self, settable: &Expr, token: Rc<Token>) -> Result {
+        macro_rules! set {
+            ($token:ident) => {{
+                self.set_variable(Rc::clone(&$token))?;
+                self.chunk.write_instr(Pop, None);
+            }};
+        }
+
+        match settable {
+            Expr::Variable(token) => set!(token),
+            Expr::Literal(Literal::List(exprs)) => {
+                self.chunk.write_instr(UnpackList, Some(Rc::clone(&token)));
+                self.chunk.write_byte(exprs.len() as u8);
+                for expr in exprs.iter().rev() {
+                    self.settable(expr, Rc::clone(&token))?;
+                }
+            }
+            Expr::Literal(Literal::Object(props)) => {
+                for (key, _) in props {
+                    self.write_const(Value::new_string(key.lexeme.clone()), Rc::clone(key))?;
+                }
+                self.chunk
+                    .write_instr(UnpackObject, Some(Rc::clone(&token)));
+                self.chunk.write_byte(props.len() as u8);
+                for (key, expr) in props {
+                    match expr {
+                        Some(settable) => {
+                            self.settable(settable, Rc::clone(&token))?;
+                        }
+                        None => set!(key),
+                    }
+                }
+            }
+            _ => {
+                self.err(CompileError::InvalidDestructure(token));
+                return Err(());
+            }
+        };
+
         Ok(())
     }
 

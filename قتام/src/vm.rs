@@ -980,6 +980,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     tmps.append(&mut self.get_state_mut().tmps);
                     self.get_state_mut().stack.append(&mut tmps)
                 }
+                CloneTop => self.push(self.last().clone()),
                 Unknown => unreachable!(),
             }
             self.set_ip((self.get_ip() as i32 + progress) as usize);

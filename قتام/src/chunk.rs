@@ -54,6 +54,7 @@ pub enum Instruction {
     UnpackObject,
     PushTmp,
     FlushTmps,
+    CloneTop,
     Unknown,
 }
 
@@ -104,7 +105,8 @@ impl Into<u8> for Instruction {
             UnpackObject => 39,
             PushTmp => 40,
             FlushTmps => 41,
-            Unknown => 42,
+            CloneTop => 42,
+            Unknown => 43,
         }
     }
 }
@@ -154,6 +156,7 @@ impl From<u8> for Instruction {
             39 => UnpackObject,
             40 => PushTmp,
             41 => FlushTmps,
+            42 => CloneTop,
             _ => Unknown,
         }
     }
@@ -204,6 +207,7 @@ impl fmt::Debug for Instruction {
             UnpackObject => "UNPACK_OBJECT",
             PushTmp => "PUSH_TMP",
             FlushTmps => "FLUSH_TMPS",
+            CloneTop => "CLONE_TOP",
             Unknown => "UNKNOWN",
         };
 
@@ -255,7 +259,7 @@ impl Chunk {
             Pop | Negate | Add | Subtract | Multiply | Divide | Remainder | Not | Equal
             | Greater | GreaterEqual | Less | LessEqual | Return | GetGlobal | SetGlobal
             | DefineGlobal | Get | Set | CloseUpValue | PopHandler | Throw | Size | PushTmp
-            | FlushTmps => {
+            | FlushTmps | CloneTop => {
                 buffer += "\n";
                 return (buffer, 1);
             }

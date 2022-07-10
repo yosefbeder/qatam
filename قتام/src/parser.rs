@@ -282,14 +282,12 @@ impl Parser {
         let mut expr;
 
         expr = match token.typ {
-            TokenType::Identifier => self.literal()?,
+            TokenType::Identifier | TokenType::OBracket | TokenType::OBrace => self.literal()?,
             TokenType::Number
             | TokenType::String
             | TokenType::True
             | TokenType::False
             | TokenType::Nil
-            | TokenType::OBracket
-            | TokenType::OBrace
             | TokenType::Pipe
             | TokenType::Or => {
                 can_assign = false;
