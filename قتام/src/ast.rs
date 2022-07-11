@@ -18,19 +18,11 @@ pub enum Expr {
     Unary(Rc<Token>, Box<Expr>),
     Binary(Rc<Token>, Box<Expr>, Box<Expr>),
     Call(Rc<Token>, Box<Expr>, Vec<Expr>),
-    Get(Rc<Token>, Box<Expr>, Box<Expr>),
-    Set(Rc<Token>, Box<Expr>, Box<Expr>, Box<Expr>),
+    Member(Rc<Token>, Box<Expr>, Box<Expr>),
     Lambda(Rc<Token>, Vec<Expr>, Box<Stml>),
 }
 
 impl Expr {
-    pub fn as_variable(&self) -> Rc<Token> {
-        match self {
-            Self::Variable(token) => Rc::clone(token),
-            _ => unreachable!(),
-        }
-    }
-
     pub fn is_variable(&self) -> bool {
         match self {
             Self::Variable(_) => true,

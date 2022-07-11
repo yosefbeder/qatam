@@ -592,11 +592,25 @@ impl<'a> Compiler<'a> {
     fn binary(&mut self, op: Rc<Token>, lhs: &Expr, rhs: &Expr) -> Result {
         macro_rules! set_and {
             ($instr:ident) => {{
-                let token = lhs.as_variable();
-                self.get_variable(token.clone())?;
-                self.expr(rhs)?;
-                self.chunk.write_instr($instr, Some(op));
-                self.set_variable(token.clone())?;
+                match lhs {
+                    Expr::Variable(token) => {
+                        self.get_variable(token.clone())?;
+                        self.expr(rhs)?;
+                        self.chunk.write_instr($instr, Some(op));
+                        self.set_variable(token.clone())?;
+                    }
+                    Expr::Member(token, expr, key) => {
+                        self.expr(expr)?;
+                        self.expr(key)?;
+                        self.chunk.write_instr(Get, Some(Rc::clone(token)));
+                        self.expr(rhs)?;
+                        self.chunk.write_instr($instr, Some(op));
+                        self.expr(expr)?;
+                        self.expr(key)?;
+                        self.chunk.write_instr(Set, Some(Rc::clone(token)));
+                    }
+                    _ => unreachable!(),
+                }
                 return Ok(());
             }};
         }
@@ -684,32 +698,6 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn set(&mut self, token: Rc<Token>, instance: &Expr, key: &Expr, value: &Expr) -> Result {
-        macro_rules! get_and {
-            ($instr:ident) => {{
-                self.expr(instance)?;
-                self.expr(key)?;
-                self.chunk.write_instr(Get, Some(Rc::clone(&token)));
-                self.chunk.write_instr($instr, Some(Rc::clone(&token)));
-            }};
-        }
-
-        self.expr(value)?;
-        match token.typ {
-            TokenType::PlusEqual => get_and!(Add),
-            TokenType::MinusEqual => get_and!(Subtract),
-            TokenType::StarEqual => get_and!(Multiply),
-            TokenType::SlashEqual => get_and!(Divide),
-            TokenType::PercentEqual => get_and!(Remainder),
-            _ => {}
-        }
-
-        self.expr(instance)?;
-        self.expr(key)?;
-        self.chunk.write_instr(Set, Some(Rc::clone(&token)));
-        Ok(())
-    }
-
     fn call(&mut self, token: Rc<Token>, callee: &Expr, args: &Vec<Expr>) -> Result {
         self.expr(callee)?;
         let mut count = 0;
@@ -747,10 +735,7 @@ impl<'a> Compiler<'a> {
             Expr::Literal(literal) => self.literal(literal)?,
             Expr::Unary(op, expr) => self.unary(Rc::clone(op), expr)?,
             Expr::Binary(op, lhs, rhs) => self.binary(Rc::clone(op), lhs, rhs)?,
-            Expr::Get(token, instance, key) => self.get(Rc::clone(&token), instance, key)?,
-            Expr::Set(token, instance, key, value) => {
-                self.set(Rc::clone(&token), instance, key, value)?
-            }
+            Expr::Member(token, instance, key) => self.get(Rc::clone(&token), instance, key)?,
             Expr::Call(token, callee, args) => self.call(Rc::clone(&token), callee, args)?,
             Expr::Lambda(token, params, body) => self.lambda(Rc::clone(token), params, body)?,
         };
@@ -850,6 +835,12 @@ impl<'a> Compiler<'a> {
 
         match settable {
             Expr::Variable(token) => set!(token),
+            Expr::Member(token, expr, key) => {
+                self.expr(expr)?;
+                self.expr(key)?;
+                self.chunk.write_instr(Set, Some(Rc::clone(token)));
+                self.chunk.write_instr(Pop, None);
+            }
             Expr::Literal(Literal::List(exprs)) => {
                 self.chunk.write_instr(UnpackList, Some(Rc::clone(&token)));
                 self.chunk.write_byte(exprs.len() as u8);

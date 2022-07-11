@@ -17,6 +17,13 @@ enum ParseError {
     InvalidRhs(Token),
 }
 
+#[derive(PartialEq, Clone, Copy)]
+enum AssignAbility {
+    AnyOp,
+    OnlyEqual,
+    None,
+}
+
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -266,7 +273,7 @@ impl Parser {
         let token = self.clone_previous();
         let row: usize = token.typ.into();
         let prefix_precedence = OPERATORS[row].0.unwrap();
-        let rhs = self.expr(prefix_precedence, false)?;
+        let rhs = self.expr(prefix_precedence, AssignAbility::None)?;
         Ok(Expr::Unary(Rc::new(token), Box::new(rhs)))
     }
 
@@ -276,13 +283,25 @@ impl Parser {
         return Ok(expr);
     }
 
+    fn can_assign(typ: TokenType, assign_ops: AssignAbility) -> bool {
+        match typ {
+            TokenType::Equal => assign_ops != AssignAbility::None,
+            x if BINARY_SET.contains(&x) => assign_ops == AssignAbility::AnyOp,
+            _ => false,
+        }
+    }
+
     /// Parses any expression with a binding power more than or equal to `min_bp`.
-    fn expr(&mut self, min_precedence: u8, mut can_assign: bool) -> Result<Expr> {
+    fn expr(&mut self, min_precedence: u8, mut assign_abililty: AssignAbility) -> Result<Expr> {
         let mut token = self.next()?;
         let mut expr;
 
         expr = match token.typ {
-            TokenType::Identifier | TokenType::OBracket | TokenType::OBrace => self.literal()?,
+            TokenType::Identifier => self.literal()?,
+            TokenType::OBracket | TokenType::OBrace => {
+                assign_abililty = AssignAbility::OnlyEqual;
+                self.literal()?
+            }
             TokenType::Number
             | TokenType::String
             | TokenType::True
@@ -290,15 +309,15 @@ impl Parser {
             | TokenType::Nil
             | TokenType::Pipe
             | TokenType::Or => {
-                can_assign = false;
+                assign_abililty = AssignAbility::None;
                 self.literal()?
             }
             TokenType::Minus | TokenType::Bang => {
-                can_assign = false;
+                assign_abililty = AssignAbility::None;
                 self.unary()?
             }
             TokenType::OParen => {
-                can_assign = false;
+                assign_abililty = AssignAbility::None;
                 self.group()?
             }
             _ => {
@@ -319,13 +338,15 @@ impl Parser {
                     break;
                 }
 
-                if token.typ != TokenType::Equal {
-                    can_assign = false;
-                }
-
                 self.advance()?;
 
-                if token.typ == TokenType::Equal && !can_assign {
+                if !BINARY_SET.contains(&token.typ) {
+                    assign_abililty = AssignAbility::None;
+                }
+
+                let can_assign = Self::can_assign(token.typ, assign_abililty);
+
+                if BINARY_SET.contains(&token.typ) && !can_assign {
                     self.parse_err(ParseError::InvalidRhs(token.clone()));
                 }
 
@@ -337,7 +358,11 @@ impl Parser {
                             Associativity::Right => infix_precedence,
                             Associativity::Left => infix_precedence - 1,
                         },
-                        can_assign,
+                        if can_assign {
+                            AssignAbility::AnyOp
+                        } else {
+                            AssignAbility::None
+                        },
                     )?),
                 );
             } else if let Some(postfix_precedence) = OPERATORS[row as usize].2 {
@@ -349,53 +374,36 @@ impl Parser {
 
                 match token.typ {
                     TokenType::OParen => {
+                        assign_abililty = AssignAbility::None;
                         expr = Expr::Call(
                             Rc::new(token),
                             Box::new(expr),
                             self.exprs(TokenType::CParen)?,
                         );
                     }
-                    //TODO>> abstract
-                    TokenType::Period => {
-                        self.consume(TokenType::Identifier)?;
-                        let key = Expr::Literal(Literal::String(Rc::new(self.clone_previous())));
+                    TokenType::Period | TokenType::OBracket => {
+                        match expr {
+                            Expr::Call(_, _, _) => {
+                                assign_abililty = AssignAbility::AnyOp;
+                            }
+                            _ => {}
+                        }
 
-                        if BINARY_SET.contains(&self.peek(true).typ) {
-                            token = self.next()?;
-                            if !can_assign {
-                                self.parse_err(ParseError::InvalidRhs(token.clone()));
+                        let key = match token.typ {
+                            TokenType::Period => {
+                                self.consume(TokenType::Identifier)?;
+                                Expr::Literal(Literal::String(Rc::new(self.clone_previous())))
                             }
-                            expr = Expr::Set(
-                                Rc::new(token),
-                                Box::new(expr),
-                                Box::new(key),
-                                Box::new(self.expr(postfix_precedence, true)?),
-                            );
-                        } else {
-                            expr = Expr::Get(Rc::new(token), Box::new(expr), Box::new(key));
-                        }
-                    }
-                    TokenType::OBracket => {
-                        let key = self.parse_expr()?;
-                        self.consume(TokenType::CBracket)?;
-                        if BINARY_SET.contains(&self.peek(true).typ) {
-                            let row: usize = self.peek(true).typ.into();
-                            let infix_precedence = OPERATORS[row].1.unwrap();
-                            token = self.next()?;
-                            if !can_assign {
-                                self.parse_err(ParseError::InvalidRhs(token.clone()));
+                            TokenType::OBracket => {
+                                let tmp = self.parse_expr()?;
+                                self.consume(TokenType::CBracket)?;
+                                tmp
                             }
-                            expr = Expr::Set(
-                                Rc::new(token),
-                                Box::new(expr),
-                                Box::new(key),
-                                Box::new(self.expr(infix_precedence, true)?),
-                            );
-                        } else {
-                            expr = Expr::Get(Rc::new(token), Box::new(expr), Box::new(key));
-                        }
+                            _ => unreachable!(),
+                        };
+
+                        expr = Expr::Member(Rc::new(token), Box::new(expr), Box::new(key));
                     }
-                    //<<
                     _ => unreachable!(),
                 }
             } else {
@@ -665,7 +673,7 @@ impl Parser {
     }
 
     pub fn parse_expr(&mut self) -> Result<Expr> {
-        self.expr(9, true)
+        self.expr(9, AssignAbility::AnyOp)
     }
 
     pub fn parse(&mut self) -> Result<Vec<Stml>> {
