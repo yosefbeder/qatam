@@ -10,6 +10,7 @@ import { materialDark } from 'cm6-theme-material-dark';
 import { nord } from 'cm6-theme-nord';
 import { gruvboxLight } from 'cm6-theme-gruvbox-light';
 import { gruvboxDark } from 'cm6-theme-gruvbox-dark';
+import { oneDark } from '@codemirror/theme-one-dark';
 
 const selectTheme = document.getElementById('theme');
 const divEditor = document.getElementById('editor');
@@ -25,6 +26,7 @@ const THEMES = {
   nord: nord,
   'gruvbox-light': gruvboxLight,
   'gruvbox-dark': gruvboxDark,
+  'one-dark': oneDark,
 };
 
 const style = EditorView.theme({
@@ -82,7 +84,7 @@ class App {
   }
 
   renderSelect(defaultTheme) {
-    selectTheme.innerHtml = Object.keys(this.themes)
+    selectTheme.innerHTML = Object.keys(this.themes)
       .map(theme => `<option value="${theme}">${theme}</option>`)
       .join('');
     selectTheme.value = defaultTheme;
