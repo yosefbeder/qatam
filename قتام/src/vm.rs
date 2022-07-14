@@ -157,7 +157,8 @@ impl Vm {
             .push(Value::Object(Object::Closure(Rc::clone(&closure))));
         match Frame::new_closure(self, closure, 0, 0, None).run(0) {
             Err(err) => {
-                eprint!("{err}")
+                eprint!("{err}");
+                return Err(());
             }
             _ => {}
         };
