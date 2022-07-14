@@ -1,4 +1,5 @@
 returncode: 0
 stdout:
 السلام عليكم
+20
 stderr:

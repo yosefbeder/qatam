@@ -743,15 +743,15 @@ impl<'a> Compiler<'a> {
     }
 
     fn define_params(&mut self, params: &Vec<Expr>, token: Rc<Token>) -> Result {
-        for param in params {
+        for param in params.iter().rev() {
             if self.arity == 0xff {
                 self.err(CompileError::TooManyParams(token));
                 return Err(());
             }
-            self.definable(param, Rc::clone(&token), true)?;
+            self.definable(param, Rc::clone(&token), false)?;
             self.arity += 1;
         }
-
+        self.chunk.write_instr(FlushTmps, None);
         Ok(())
     }
 
