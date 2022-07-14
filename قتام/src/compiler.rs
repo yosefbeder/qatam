@@ -3,7 +3,7 @@ use super::{
     chunk::{Chunk, Instruction::*},
     parser::Parser,
     token::{Token, TokenType},
-    value::{Arity, Function, Value},
+    value::{Arity, ArityType::*, Function, Value},
 };
 use std::{
     cell::RefCell, ffi::OsStr, fmt, fs, io::Error as IOError, path::PathBuf, rc::Rc, result,
@@ -272,7 +272,9 @@ impl CompilerState {
 pub struct Compiler<'a> {
     typ: CompilerType,
     name: Option<String>,
-    arity: u8,
+    arity: Arity,
+    defaults: Vec<usize>,
+    start_ip: usize,
     ast: &'a Vec<Stml>,
     chunk: Chunk,
     state: Rc<RefCell<CompilerState>>,
@@ -290,7 +292,9 @@ impl<'a> Compiler<'a> {
         Compiler {
             typ: CompilerType::Script,
             name: None,
-            arity: 0,
+            arity: Arity::default(),
+            defaults: vec![],
+            start_ip: 0,
             ast,
             chunk: Chunk::new(),
             state: Rc::new(RefCell::new(state)),
@@ -308,7 +312,9 @@ impl<'a> Compiler<'a> {
         Compiler {
             typ: CompilerType::Module,
             name: None,
-            arity: 0,
+            arity: Arity::default(),
+            defaults: vec![],
+            start_ip: 0,
             ast,
             chunk: Chunk::new(),
             state: Rc::new(RefCell::new(state)),
@@ -325,7 +331,9 @@ impl<'a> Compiler<'a> {
         Compiler {
             typ: CompilerType::Function,
             name,
-            arity: 0,
+            arity: Arity::default(),
+            defaults: vec![],
+            start_ip: 0,
             ast: match body {
                 Stml::Block(stmls) => stmls,
                 _ => unreachable!(),
@@ -365,6 +373,10 @@ impl<'a> Compiler<'a> {
     fn err(&mut self, err: CompileError) {
         eprintln!("{err}");
         self.state.borrow_mut().had_err = true;
+    }
+
+    fn ip(&self) -> usize {
+        self.chunk.len()
     }
 
     fn quoted_string(&mut self, token: Rc<Token>) -> result::Result<String, ()> {
@@ -714,7 +726,12 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn lambda(&mut self, token: Rc<Token>, params: &Vec<Expr>, body: &Box<Stml>) -> Result {
+    fn lambda(
+        &mut self,
+        token: Rc<Token>,
+        params: &Vec<(Expr, Option<Expr>)>,
+        body: &Box<Stml>,
+    ) -> Result {
         let mut compiler =
             Compiler::new_function(None, body, Rc::clone(&self.state), self.path.clone());
         compiler.define_variable(Rc::new(Token::new_empty()))?;
@@ -742,20 +759,42 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn define_params(&mut self, params: &Vec<Expr>, token: Rc<Token>) -> Result {
+    fn define_params(&mut self, params: &Vec<(Expr, Option<Expr>)>, token: Rc<Token>) -> Result {
+        // 1. Default values
+        for param in params {
+            if param.1.is_none() {
+                continue;
+            }
+            self.defaults.push(self.ip());
+            self.expr(param.1.as_ref().unwrap())?;
+        }
+        self.start_ip = self.ip();
+        // 2. Defining
+        let mut required = 0;
+        let mut optional = 0;
         for param in params.iter().rev() {
-            if self.arity == 0xff {
+            if required + optional == 0xff {
                 self.err(CompileError::TooManyParams(token));
                 return Err(());
             }
-            self.definable(param, Rc::clone(&token), false)?;
-            self.arity += 1;
+            self.definable(&param.0, Rc::clone(&token), false)?;
+            if param.1.is_some() {
+                optional += 1;
+            } else {
+                required += 1;
+            }
         }
         self.chunk.write_instr(FlushTmps, None);
+        self.arity = Arity::new(Fixed, required, optional);
         Ok(())
     }
 
-    fn function_decl(&mut self, name: Rc<Token>, params: &Vec<Expr>, body: &Stml) -> Result {
+    fn function_decl(
+        &mut self,
+        name: Rc<Token>,
+        params: &Vec<(Expr, Option<Expr>)>,
+        body: &Stml,
+    ) -> Result {
         let mut compiler = Compiler::new_function(
             Some(name.lexeme.clone()),
             body,
@@ -980,7 +1019,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn start_loop(&mut self) -> Loop {
-        let loop_ = Loop::new(self.chunk.len());
+        let loop_ = Loop::new(self.ip());
         self.state.borrow_mut().loops.push(loop_.clone());
         loop_
     }
@@ -1163,7 +1202,7 @@ impl<'a> Compiler<'a> {
         self.define_variable(Rc::new(Token::new_empty()))?;
 
         // 2. Check the next element
-        let start = self.chunk.len();
+        let start = self.ip();
         self.expr(iterator)?;
         self.chunk.write_instr(Size, Some(Rc::clone(&token))); //TODO find a better token to report this err
         get_counter!();
@@ -1278,7 +1317,9 @@ impl<'a> Compiler<'a> {
             Ok(Function::new(
                 self.name.clone(),
                 self.chunk.clone(),
-                Arity::Fixed(self.arity),
+                self.arity.clone(),
+                self.defaults.clone(),
+                self.start_ip,
             ))
         }
     }

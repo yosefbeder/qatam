@@ -441,16 +441,54 @@ impl Parser {
         Ok(Stml::Throw(Rc::new(token), Some(self.parse_expr()?)))
     }
 
-    fn params(&mut self, closing_token: TokenType) -> Result<Vec<Expr>> {
+    fn optional_param(&mut self) -> Result<(Expr, Option<Expr>)> {
+        let definable = self.definable()?;
+        self.consume(TokenType::Equal)?;
+        let default = Some(self.parse_expr()?);
+        Ok((definable, default))
+    }
+
+    fn param(&mut self) -> Result<(Expr, Option<Expr>)> {
+        let definable = self.definable()?;
+        let default = if self.check_consume(TokenType::Equal) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+        Ok((definable, default))
+    }
+
+    fn params(&mut self, closing_token: TokenType) -> Result<Vec<(Expr, Option<Expr>)>> {
         if self.check_consume(closing_token) {
             return Ok(vec![]);
         }
-        let mut items = vec![self.definable()?];
+        let first = self.param()?;
+
+        let mut items = if first.1.is_some() {
+            vec![first]
+        } else {
+            // 1. Parse the required part
+            let mut tmp = vec![first];
+            while self.check_consume(TokenType::Comma) {
+                if self.check_consume(closing_token) {
+                    return Ok(tmp);
+                }
+                let param = self.param()?;
+                let is_optional = param.1.is_some();
+                tmp.push(param);
+                if is_optional {
+                    break;
+                }
+            }
+            tmp
+        };
+
+        // 2. Parse the optional part
         while self.check_consume(TokenType::Comma) {
             if self.check_consume(closing_token) {
                 return Ok(items);
             }
-            items.push(self.definable()?);
+            items.push(self.optional_param()?);
         }
         self.consume(closing_token)?;
         Ok(items)

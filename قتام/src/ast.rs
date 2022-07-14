@@ -19,7 +19,7 @@ pub enum Expr {
     Binary(Rc<Token>, Box<Expr>, Box<Expr>),
     Call(Rc<Token>, Box<Expr>, Vec<Expr>),
     Member(Rc<Token>, Box<Expr>, Box<Expr>),
-    Lambda(Rc<Token>, Vec<Expr>, Box<Stml>),
+    Lambda(Rc<Token>, Vec<(Expr, Option<Expr>)>, Box<Stml>),
 }
 
 impl Expr {
@@ -34,7 +34,7 @@ impl Expr {
 #[derive(Debug)]
 pub enum Stml {
     Block(Vec<Stml>),
-    FunctionDecl(Rc<Token>, Vec<Expr>, Box<Stml>),
+    FunctionDecl(Rc<Token>, Vec<(Expr, Option<Expr>)>, Box<Stml>),
     VarDecl(Rc<Token>, Expr, Option<Expr>),
     Return(Rc<Token>, Option<Expr>),
     Throw(Rc<Token>, Option<Expr>),

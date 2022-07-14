@@ -1,5 +1,5 @@
 use super::{
-    value::{Arity, Native, Object, Value},
+    value::{Arity, ArityType::*, Native, Object, Value},
     vm::Frame,
 };
 use rand::prelude::*;
@@ -14,13 +14,13 @@ use std::{
 };
 
 pub fn as_string(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let arg = frame.nth(1);
     Ok(Value::new_string(arg.to_string()))
 }
 
 pub fn as_unicode(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let arg = frame.nth_u32(1)?;
     match std::char::from_u32(arg as u32) {
         Some(c) => Ok(Value::new_string(c.to_string())),
@@ -31,14 +31,14 @@ pub fn as_unicode(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn as_unicode_number(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let arg = frame.nth_char(1)?;
     let n: u32 = arg.into();
     Ok(Value::Number(n as f64))
 }
 
 pub fn as_number(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let arg = frame.nth_string(1)?;
     let n: f64 = arg
         .parse()
@@ -47,7 +47,7 @@ pub fn as_number(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn as_int(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     match frame.nth(1) {
         Value::Object(Object::String(string)) => {
             let n: u32 = string
@@ -63,13 +63,13 @@ pub fn as_int(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn typ(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let arg = frame.nth(1);
     Ok(Value::new_string(arg.get_type().to_string()))
 }
 
 pub fn size(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let arg = frame.nth(1);
     Ok(Value::Number(match arg {
         Value::Object(Object::List(items)) => items.borrow().len(),
@@ -83,7 +83,7 @@ pub fn size(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn props(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let arg = frame.nth_object(1)?.borrow();
     let mut res = vec![];
     let mut entries = arg.iter().collect::<Vec<_>>();
@@ -100,7 +100,7 @@ pub fn props(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn push(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Variadic(2), argc)?;
+    Frame::check_arity(Arity::new(Variadic, 2, 0), argc)?;
     let list = frame.nth_list(1)?;
     for idx in 2..=argc {
         list.borrow_mut().push(frame.nth(idx).clone());
@@ -109,7 +109,7 @@ pub fn push(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn pop(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let list = frame.nth_list(1)?;
     let item = list.borrow_mut().pop();
     match item {
@@ -119,63 +119,63 @@ pub fn pop(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn rand(_: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(0), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 0, 0), argc)?;
     let mut rng = rand::thread_rng();
     Ok(Value::Number(rng.gen::<f64>()))
 }
 
 pub fn sin(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let n = frame.nth_f64(1)?;
     Ok(Value::Number(n.sin()))
 }
 
 pub fn cos(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let n = frame.nth_f64(1)?;
     Ok(Value::Number(n.cos()))
 }
 
 pub fn tan(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let n = frame.nth_f64(1)?;
     Ok(Value::Number(n.tan()))
 }
 
 pub fn csc(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let n = frame.nth_f64(1)?;
     Ok(Value::Number(1.0 / n.sin()))
 }
 
 pub fn sec(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let n = frame.nth_f64(1)?;
     Ok(Value::Number(1.0 / n.cos()))
 }
 
 pub fn cot(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let n = frame.nth_f64(1)?;
     Ok(Value::Number(1.0 / n.tan()))
 }
 
 pub fn pow(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(2), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 2, 0), argc)?;
     let n = frame.nth_f64(1)?;
     let power = frame.nth_f64(2)?;
     Ok(Value::Number(n.powf(power)))
 }
 
 pub fn log(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(2), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 2, 0), argc)?;
     let n = frame.nth_f64(1)?;
     let base = frame.nth_f64(2)?;
     Ok(Value::Number(n.log(base)))
 }
 
 pub fn args(_: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(0), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 0, 0), argc)?;
     let res: Vec<_> = std::env::args().collect();
     Ok(Value::new_list(
         res.iter()
@@ -185,7 +185,7 @@ pub fn args(_: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn env(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(0), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 0, 0), argc)?;
     frame.check_trust()?;
     let mut res = HashMap::new();
 
@@ -197,20 +197,20 @@ pub fn env(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn time(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(0), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 0, 0), argc)?;
     let now = SystemTime::now();
     let duration = now.duration_since(*frame.get_creation_time()).unwrap();
     Ok(Value::Number(duration.as_millis() as f64))
 }
 
 pub fn exit(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     let code = frame.nth_i32(1)?;
     process::exit(code as i32);
 }
 
 pub fn print(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Variadic(1), argc)?;
+    Frame::check_arity(Arity::new(Variadic, 1, 0), argc)?;
     for idx in 1..=argc {
         let arg = frame.nth(idx);
         println!("{}", arg);
@@ -219,7 +219,7 @@ pub fn print(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn input(_: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(0), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 0, 0), argc)?;
     let mut buffer = String::new();
     io::stdin().read_line(&mut buffer).unwrap();
     buffer.pop();
@@ -227,7 +227,7 @@ pub fn input(_: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn create(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     frame.check_trust()?;
     let path = frame.nth_path(1)?;
     let mut open_options = OpenOptions::new();
@@ -240,7 +240,7 @@ pub fn create(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn create_folder(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     frame.check_trust()?;
     let path = frame.nth_path(1)?;
     match fs::create_dir(&path) {
@@ -250,7 +250,7 @@ pub fn create_folder(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn open(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(2), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 2, 0), argc)?;
     frame.check_trust()?;
     let path = frame.nth_path(1)?;
     let mode = frame.nth_string(2)?;
@@ -274,7 +274,7 @@ pub fn open(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn read(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     frame.check_trust()?;
     let path = frame.nth_file(1)?;
     let mut buffer = String::new();
@@ -283,7 +283,7 @@ pub fn read(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn read_folder(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     frame.check_trust()?;
     let path = frame.nth_path(1)?;
 
@@ -302,7 +302,7 @@ pub fn read_folder(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn write(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(2), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 2, 0), argc)?;
     frame.check_trust()?;
     let path = frame.nth_file(1)?;
     let content = frame.nth_string(2)?;
@@ -311,7 +311,7 @@ pub fn write(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn move_(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(2), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 2, 0), argc)?;
     frame.check_trust()?;
     let old_path = frame.nth_string(1)?;
     let new_path = frame.nth_string(2)?;
@@ -322,7 +322,7 @@ pub fn move_(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn delete(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     frame.check_trust()?;
     let path = frame.nth_path(1)?;
     match fs::remove_file(&path) {
@@ -332,7 +332,7 @@ pub fn delete(frame: &Frame, argc: usize) -> Result<Value, Value> {
 }
 
 pub fn delete_folder(frame: &Frame, argc: usize) -> Result<Value, Value> {
-    Frame::check_arity(Arity::Fixed(1), argc)?;
+    Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
     frame.check_trust()?;
     let path = frame.nth_path(1)?;
     match fs::remove_dir(&path) {

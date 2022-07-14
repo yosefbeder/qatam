@@ -1,16 +1,45 @@
 use super::{chunk::Chunk, vm::Frame};
 use std::{cell::RefCell, cmp, collections::HashMap, convert::From, fmt, fs::File, ops, rc::Rc};
 
-#[derive(Clone, Copy)]
-pub enum Arity {
-    Fixed(u8),
-    Variadic(u8),
+#[derive(Clone, Copy, PartialEq)]
+pub enum ArityType {
+    Fixed,
+    Variadic,
+}
+
+#[derive(Clone)]
+pub struct Arity {
+    pub typ: ArityType,
+    pub required: usize,
+    pub optional: usize,
+}
+
+impl Arity {
+    pub fn new(typ: ArityType, required: usize, optional: usize) -> Self {
+        Self {
+            typ,
+            required,
+            optional,
+        }
+    }
+}
+
+impl Default for Arity {
+    fn default() -> Self {
+        Self {
+            typ: ArityType::Fixed,
+            required: 0,
+            optional: 0,
+        }
+    }
 }
 
 pub struct Function {
     name: Option<String>,
     chunk: Chunk,
     arity: Arity,
+    defaults: Vec<usize>,
+    start_ip: usize,
 }
 
 impl fmt::Debug for Function {
@@ -40,8 +69,20 @@ impl fmt::Display for Function {
 }
 
 impl Function {
-    pub fn new(name: Option<String>, chunk: Chunk, arity: Arity) -> Self {
-        Self { name, chunk, arity }
+    pub fn new(
+        name: Option<String>,
+        chunk: Chunk,
+        arity: Arity,
+        defaults: Vec<usize>,
+        start_ip: usize,
+    ) -> Self {
+        Self {
+            name,
+            chunk,
+            arity,
+            defaults,
+            start_ip,
+        }
     }
 }
 
@@ -97,7 +138,15 @@ impl Closure {
     }
 
     pub fn get_arity(&self) -> Arity {
-        self.function.arity
+        self.function.arity.clone()
+    }
+
+    pub fn get_defaults(&self) -> Vec<usize> {
+        self.function.defaults.clone()
+    }
+
+    pub fn get_start_ip(&self) -> usize {
+        self.function.start_ip
     }
 
     pub fn get_up_values(&self) -> &Vec<Rc<RefCell<UpValue>>> {

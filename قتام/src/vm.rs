@@ -3,7 +3,7 @@ use super::{
     natives::NATIVES,
     token::Token,
     utils::combine,
-    value::{Arity, Closure, Function, Native, Object, UpValue, Value},
+    value::{Arity, ArityType::*, Closure, Function, Native, Object, UpValue, Value},
 };
 use std::{
     cell::RefCell, collections::HashMap, fmt, fs::File, path::PathBuf, rc::Rc, time::SystemTime,
@@ -155,7 +155,7 @@ impl Vm {
         let closure = Rc::new(Closure::new(Rc::new(function), vec![]));
         self.stack
             .push(Value::Object(Object::Closure(Rc::clone(&closure))));
-        match Frame::new_closure(self, closure, 0, None).run(0) {
+        match Frame::new_closure(self, closure, 0, 0, None).run(0) {
             Err(err) => {
                 eprint!("{err}")
             }
@@ -198,13 +198,14 @@ impl<'a, 'b> Frame<'a, 'b> {
     fn new_closure(
         state: &'a mut Vm,
         closure: Rc<Closure>,
+        ip: usize,
         slots: usize,
         enclosing_up_values: Option<&'b Vec<Rc<RefCell<UpValue>>>>,
     ) -> Self {
         Self::Closure {
             state,
             closure,
-            ip: 0,
+            ip,
             slots,
             enclosing_up_values,
             handlers: vec![],
@@ -358,25 +359,19 @@ impl<'a, 'b> Frame<'a, 'b> {
 
     //>> Native functions utilities
     pub fn check_arity(arity: Arity, argc: usize) -> Result<(), Value> {
-        match arity {
-            Arity::Fixed(arity) => {
-                if argc != arity as usize {
-                    Err(Value::new_string(format!(
-                        "توقعت عدد {arity} من المدخلات ولكن حصلت على {argc} بدلاً من ذللك"
-                    )))
-                } else {
-                    Ok(())
-                }
-            }
-            Arity::Variadic(arity) => {
-                if argc < arity as usize {
-                    Err(Value::new_string(format!(
-                        "توقعت على الأقل عدد {arity} من المدخلات ولكن حصلت على {argc} بدلاً من ذلك"
-                    )))
-                } else {
-                    Ok(())
-                }
-            }
+        if argc < arity.required {
+            Err(Value::new_string(format!(
+                " توقعت على الأقل عدد {} من المدخلات، ولكن حصلت على {} بدلاً من ذللك",
+                arity.required, argc
+            )))
+        } else if arity.typ == Fixed && argc > arity.required + arity.optional {
+            Err(Value::new_string(format!(
+                "توقعت على الأكثر عدد {} من المدخلات، ولكن حصلت على {} بدلاً من ذلك",
+                arity.required + arity.optional,
+                argc
+            )))
+        } else {
+            Ok(())
         }
     }
 
@@ -827,14 +822,24 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let enclosing_closure = self.get_closure().clone();
                     let mut frame = match self.get_state().stack[idx].clone() {
                         Value::Object(Object::Closure(closure)) => {
-                            Self::check_arity(closure.get_arity(), argc).map_err(|value| {
+                            let arity = closure.get_arity();
+                            Self::check_arity(arity.clone(), argc).map_err(|value| {
                                 let mut err = RuntimeError::new(value);
                                 err.push_frame(self);
                                 err
                             })?;
+                            let n_optionals = argc - arity.required;
+                            let ip = if n_optionals == arity.optional {
+                                closure.get_start_ip()
+                            } else if n_optionals > 0 {
+                                closure.get_defaults()[n_optionals]
+                            } else {
+                                0
+                            };
                             Frame::new_closure(
                                 self.get_state_mut(),
                                 closure,
+                                ip,
                                 idx,
                                 Some(enclosing_closure.get_up_values()),
                             )
