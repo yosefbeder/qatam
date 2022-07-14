@@ -362,7 +362,7 @@ impl<'a, 'b> Frame<'a, 'b> {
     pub fn check_arity(arity: Arity, argc: usize) -> Result<(), Value> {
         if argc < arity.required {
             Err(Value::new_string(format!(
-                " توقعت على الأقل عدد {} من المدخلات، ولكن حصلت على {} بدلاً من ذللك",
+                "توقعت على الأقل عدد {} من المدخلات، ولكن حصلت على {} بدلاً من ذللك",
                 arity.required, argc
             )))
         } else if arity.typ == Fixed && argc > arity.required + arity.optional {
@@ -476,13 +476,39 @@ impl<'a, 'b> Frame<'a, 'b> {
     }
     //<<
 
-    fn string_to_err(&self, string: String) -> RuntimeError {
-        let mut err = RuntimeError::new(Value::new_string(string));
-        err.push_frame(self);
-        err
+    fn string_to_err(&mut self, string: String) -> Result<i32, RuntimeError> {
+        let value = Value::new_string(string);
+        match self.get_handlers_mut().pop() {
+            Some(Handler { slots, ip }) => {
+                self.truncate(slots);
+                self.push(value);
+                Ok((ip - self.get_ip()) as i32)
+            }
+            None => {
+                let mut err = RuntimeError::new(value);
+                err.push_frame(self);
+                Err(err)
+            }
+        }
     }
 
     fn run(&mut self, argc: usize) -> Result<Option<Value>, RuntimeError> {
+        macro_rules! end {
+            ($progress:expr) => {{
+                self.set_ip((self.get_ip() as i32 + ($progress)) as usize);
+                if cfg!(feature = "debug-execution") {
+                    println!("{:#?}", self.get_state().stack);
+                }
+            }};
+        }
+        macro_rules! err {
+            ($msg:expr) => {{
+                let progress = self.string_to_err($msg)?;
+                end!(progress);
+                continue;
+            }};
+        }
+
         if self.is_native() {
             let returned =
                 self.get_native()(self, argc).map_err(|value| RuntimeError::new(value))?;
@@ -533,7 +559,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                 Negate => {
                     let popped = self.pop();
                     if !popped.is_number() {
-                        return Err(self.string_to_err("يجب أن يكون المعامل رقماً".to_string()));
+                        err!("يجب أن يكون المعامل رقماً".to_string());
                     }
                     self.push(-popped);
                 }
@@ -541,7 +567,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_addable(&a, &b) {
-                        return Err(self.string_to_err("لا يقبل المعاملان الجمع".to_string()));
+                        err!("لا يقبل المعاملان الجمع".to_string());
                     }
                     self.push(a + b);
                 }
@@ -549,9 +575,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_subtractable(&a, &b) {
-                        return Err(
-                            self.string_to_err("لا يقبل المعاملان الطرح من بعضهما".to_string())
-                        );
+                        err!("لا يقبل المعاملان الطرح من بعضهما".to_string());
                     }
                     self.push(a - b);
                 }
@@ -559,9 +583,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_multipliable(&a, &b) {
-                        return Err(
-                            self.string_to_err("لا يقبل المعاملان الضرب في بعضهما".to_string())
-                        );
+                        err!("لا يقبل المعاملان الضرب في بعضهما".to_string());
                     }
                     self.push(a * b);
                 }
@@ -569,9 +591,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_dividable(&a, &b) {
-                        return Err(
-                            self.string_to_err("لا يقبل المعاملان القسمة على بعضهما".to_string())
-                        );
+                        err!("لا يقبل المعاملان القسمة على بعضهما".to_string());
                     }
                     self.push(a / b);
                 }
@@ -579,9 +599,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_remainderable(&a, &b) {
-                        return Err(
-                            self.string_to_err("لا يقبل المعاملان القسمة على بعضهما".to_string())
-                        );
+                        err!("لا يقبل المعاملان القسمة على بعضهما".to_string());
                     }
                     self.push(a % b);
                 }
@@ -598,7 +616,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_numbers(&a, &b) {
-                        return Err(self.string_to_err("يجب أن يكون المعاملان أرقاماً".to_string()));
+                        err!("يجب أن يكون المعاملان أرقاماً".to_string());
                     }
                     self.push(Value::Bool(a > b));
                 }
@@ -606,7 +624,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_numbers(&a, &b) {
-                        return Err(self.string_to_err("يجب أن يكون المعاملان أرقاماً".to_string()));
+                        err!("يجب أن يكون المعاملان أرقاماً".to_string());
                     }
                     self.push(Value::Bool(a >= b));
                 }
@@ -614,7 +632,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_numbers(&a, &b) {
-                        return Err(self.string_to_err("يجب أن يكون المعاملان أرقاماً".to_string()));
+                        err!("يجب أن يكون المعاملان أرقاماً".to_string());
                     }
                     self.push(Value::Bool(a < b));
                 }
@@ -622,7 +640,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_numbers(&a, &b) {
-                        return Err(self.string_to_err("يجب أن يكون المعاملان أرقاماً".to_string()));
+                        err!("يجب أن يكون المعاملان أرقاماً".to_string());
                     }
                     self.push(Value::Bool(a <= b));
                 }
@@ -650,7 +668,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let name = self.pop().to_string();
                     let value = self.pop();
                     if self.get_state().globals.contains_key(&name) {
-                        return Err(self.string_to_err("يوجد متغير بهذا الاسم".to_string()));
+                        err!("يوجد متغير بهذا الاسم".to_string());
                     }
                     self.get_state_mut().globals.insert(name.clone(), value);
                 }
@@ -658,14 +676,14 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let name = self.pop().to_string();
                     let value = self.last().clone();
                     if !self.get_state().globals.contains_key(&name) {
-                        return Err(self.string_to_err("لا يوجد متغير بهذا الاسم".to_string()));
+                        err!("لا يوجد متغير بهذا الاسم".to_string());
                     }
                     self.get_state_mut().globals.insert(name, value);
                 }
                 GetGlobal => {
                     let name = self.pop().to_string();
                     if !self.get_state().globals.contains_key(&name) {
-                        return Err(self.string_to_err("لا يوجد متغير بهذا الاسم".to_string()));
+                        err!("لا يوجد متغير بهذا الاسم".to_string());
                     }
                     self.push(self.get_state().globals.get(&name).unwrap().clone());
                 }
@@ -706,48 +724,42 @@ impl<'a, 'b> Frame<'a, 'b> {
                     match obj {
                         Value::Object(Object::Object(items)) => {
                             if !key.is_string() {
-                                return Err(
-                                    self.string_to_err("يجب أن يكون اسم الخاصية نصاً".to_string())
-                                );
+                                err!("يجب أن يكون اسم الخاصية نصاً".to_string())
                             }
                             if let Some(value) = items.borrow().get(&key.to_string()) {
                                 self.push(value.clone());
                             } else {
-                                return Err(
-                                    self.string_to_err("لا يوجد قيمة بهذا الاسم".to_string())
-                                );
+                                err!("لا يوجد قيمة بهذا الاسم".to_string())
                             }
                         }
                         Value::Object(Object::List(items)) => {
                             if !key.is_int() {
-                                return Err(self.string_to_err(
-                                    "يجب أن يكون رقم العنصر عدداً صحيحاً".to_string(),
-                                ));
+                                err!("يجب أن يكون رقم العنصر عدداً صحيحاً".to_string())
                             }
-                            let idx = get_absolute_idx(key.as_int(), items.borrow().len())
-                                .map_err(|_| {
-                                    self.string_to_err("لا يوجد عنصر بهذا الرقم".to_string())
-                                })?;
+                            let idx = match get_absolute_idx(key.as_int(), items.borrow().len()) {
+                                Ok(idx) => idx,
+                                Err(_) => {
+                                    err!("لا يوجد عنصر بهذا الرقم".to_string())
+                                }
+                            };
                             self.push(items.borrow()[idx].clone());
                         }
                         Value::Object(Object::String(string)) => {
                             if !key.is_int() {
-                                return Err(self.string_to_err(
-                                    "يجب أن يكون رقم العنصر عدداً صحيحاً".to_string(),
-                                ));
+                                err!("يجب أن يكون رقم العنصر عدداً صحيحاً".to_string())
                             }
-                            let idx = get_absolute_idx(key.as_int(), string.chars().count())
-                                .map_err(|_| {
-                                    self.string_to_err("لا يوجد عنصر بهذا الرقم".to_string())
-                                })?;
+                            let idx = match get_absolute_idx(key.as_int(), string.chars().count()) {
+                                Ok(idx) => idx,
+                                Err(_) => {
+                                    err!("لا يوجد عنصر بهذا الرقم".to_string())
+                                }
+                            };
                             self.push(Value::new_string(
                                 string.chars().nth(idx).unwrap().to_string(),
                             ));
                         }
                         _ => {
-                            return Err(self.string_to_err(
-                                "يجب أن يكون المتغير نص أو قائمة أو كائن".to_string(),
-                            ))
+                            err!("يجب أن يكون المتغير نص أو قائمة أو كائن".to_string())
                         }
                     }
                 }
@@ -757,9 +769,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     match obj {
                         Value::Object(Object::Object(items)) => {
                             if !key.is_string() {
-                                return Err(
-                                    self.string_to_err("يجب أن يكون اسم الخاصية نصاً".to_string())
-                                );
+                                err!("يجب أن يكون اسم الخاصية نصاً".to_string())
                             }
                             items
                                 .borrow_mut()
@@ -767,22 +777,18 @@ impl<'a, 'b> Frame<'a, 'b> {
                         }
                         Value::Object(Object::List(items)) => {
                             if !key.is_int() {
-                                return Err(self.string_to_err(
-                                    "يجب أن يكون رقم العنصر عدداً صحيحاً".to_string(),
-                                ));
+                                err!("يجب أن يكون رقم العنصر عدداً صحيحاً".to_string())
                             }
-
-                            let idx = get_absolute_idx(key.as_int(), items.borrow().len())
-                                .map_err(|_| {
-                                    self.string_to_err("لا يوجد عنصر بهذا الرقم".to_string())
-                                })?;
-
+                            let idx = match get_absolute_idx(key.as_int(), items.borrow().len()) {
+                                Ok(idx) => idx,
+                                Err(_) => {
+                                    err!("لا يوجد عنصر بهذا الرقم".to_string())
+                                }
+                            };
                             items.borrow_mut()[idx] = self.last().clone();
                         }
                         _ => {
-                            return Err(
-                                self.string_to_err("يجب أن يكون المتغير قائمة أو كائن".to_string())
-                            )
+                            err!("يجب أن يكون المتغير قائمة أو كائن".to_string())
                         }
                     }
                 }
@@ -824,11 +830,10 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let mut frame = match self.get_state().stack[idx].clone() {
                         Value::Object(Object::Closure(closure)) => {
                             let arity = closure.get_arity();
-                            Self::check_arity(arity.clone(), argc).map_err(|value| {
-                                let mut err = RuntimeError::new(value);
-                                err.push_frame(self);
-                                err
-                            })?;
+                            match Self::check_arity(arity.clone(), argc) {
+                                Ok(_) => {}
+                                Err(err) => err!(err.as_string()),
+                            };
                             let n_optionals = argc - arity.required;
                             let ip = if n_optionals == arity.optional {
                                 closure.get_start_ip()
@@ -848,7 +853,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                         Value::Object(Object::Native(native)) => {
                             Frame::new_native(self.get_state_mut(), native, idx)
                         }
-                        _ => return Err(self.string_to_err("يمكن فقط استدعاء الدوال".to_string())),
+                        _ => err!("يمكن فقط استدعاء الدوال".to_string()),
                     };
                     progress = 2;
                     match frame.run(argc) {
@@ -928,7 +933,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                         Value::Object(Object::List(items)) => {
                             self.push(Value::Number(items.borrow().len() as f64));
                         }
-                        _ => return Err(self.string_to_err("يجب أن يكون نصاً أو قائمة".to_string())),
+                        _ => err!("يجب أن يكون نصاً أو قائمة".to_string()),
                     }
                 }
                 UnpackList => {
@@ -938,16 +943,14 @@ impl<'a, 'b> Frame<'a, 'b> {
                     match &popped {
                         Value::Object(Object::List(items)) => {
                             if items.borrow().len() != len {
-                                return Err(self.string_to_err("يجب أن يكون عدد العناصر التي ستوزع مساوياً لعدد عناصر الموزع منه".to_string()));
+                                err!("يجب أن يكون عدد العناصر التي ستوزع مساوياً لعدد عناصر الموزع منه".to_string())
                             }
                             for item in items.borrow().clone() {
                                 self.push(item);
                             }
                         }
                         _ => {
-                            return Err(self.string_to_err(
-                                "يجب أن تكون القيمة التي ستوزع باستخدام '[]' قائمةً".to_string(),
-                            ))
+                            err!("يجب أن تكون القيمة التي ستوزع باستخدام '[]' قائمةً".to_string())
                         }
                     }
                     progress = 2;
@@ -964,14 +967,12 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let items = match self.pop() {
                         Value::Object(Object::Object(items)) => items,
                         _ => {
-                            return Err(self.string_to_err(
-                                "يجب أن تكون القيمة التي ستوزع باستخدام '{}' كائناً".to_string(),
-                            ))
+                            err!("يجب أن تكون القيمة التي ستوزع باستخدام '{}' كائناً".to_string())
                         }
                     };
                     for key in keys.iter().rev() {
                         if !items.borrow().contains_key(key) {
-                            return Err(self.string_to_err(format!("{key} غير موجود في الكائن")));
+                            err!(format!("{key} غير موجود في الكائن"))
                         }
                         self.push(items.borrow()[key].clone())
                     }
@@ -989,10 +990,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                 CloneTop => self.push(self.last().clone()),
                 Unknown => unreachable!(),
             }
-            self.set_ip((self.get_ip() as i32 + progress) as usize);
-            if cfg!(feature = "debug-execution") {
-                println!("{:#?}", self.get_state().stack);
-            }
+            end!(progress)
         }
         Ok(None)
     }
