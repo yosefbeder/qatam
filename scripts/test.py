@@ -6,7 +6,7 @@ import subprocess
 from difflib import Differ
 
 DEFAULT_DIR = Path("tests")
-BIN_DIR = Path("target/release")
+BIN_DIR = Path("target/debug")
 
 
 def serialize(returncode, stdout, stderr):
@@ -22,13 +22,15 @@ def get_snapshot_path(dir: Path, name: str) -> Path:
     return res.joinpath(f"{name}.txt")
 
 
-def sync(dir: Path):
+def sync(dir: Path, should_build: bool = True):
     clean(dir)
+    if should_build:
+        subprocess.run(["cargo", "build", "--bin", "قتام"])
     try:
         for name in listdir(dir):
             path = dir.joinpath(name)
             if path.is_dir():
-                sync(path)
+                sync(path, False)
             if path.suffix == ".قتام":
                 process = subprocess.run(
                     [BIN_DIR.joinpath("قتام.exe"), "--ملف", path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
@@ -39,12 +41,14 @@ def sync(dir: Path):
         print(e)
 
 
-def run(dir: Path):
+def run(dir: Path, should_build: bool = True):
+    if should_build:
+        subprocess.run(["cargo", "build", "--bin", "قتام"])
     try:
         for name in listdir(dir):
             path = dir.joinpath(name)
             if path.is_dir() and name != "النتائج":
-                run(path)
+                run(path, False)
             if path.suffix == ".قتام":
                 snapshot_path = get_snapshot_path(dir, name)
                 if not snapshot_path.exists():
@@ -101,7 +105,7 @@ def main():
         return
     if subcommands.get(subcommand) is not None:
         try:
-            dir = Path(getcwd()).joinpath(next(argvIter))
+            dir = Path(next(argvIter))
         except StopIteration:
             dir = DEFAULT_DIR
         try:
