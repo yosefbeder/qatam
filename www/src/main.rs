@@ -29,7 +29,7 @@ fn execute(req: Json<Req>) -> Json<Res> {
         .unwrap();
     file.write_all(req.code.as_bytes()).unwrap();
     let mut p = Popen::create(
-        &["target/release/قتام", "--ملف", path, "--غير-موثوق"],
+        &["target/release/قتام", "--غير-موثوق", path],
         PopenConfig {
             stdout: Redirection::Pipe,
             stderr: Redirection::Pipe,

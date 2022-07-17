@@ -11,29 +11,49 @@ mod utils;
 mod value;
 mod vm;
 
-use args::Mode;
+use args::{get_action, Action, EvalMode};
 use compiler::Compiler;
+use exitcode::{DATAERR, USAGE};
 use parser::Parser;
 use rustyline::Editor;
-use std::{env, fs, path::PathBuf, process::exit};
+use std::{fs, path::PathBuf, process::exit};
 use value::Function;
 use vm::Vm;
 
+const HELP_MSG: &str = "طريقة الإستخدام:
+  قتام [الإعدادات] [الملف [مدخلات البرنامج]]
+
+في حالة عدم توافر الملف ستعمل اللغة على الوضع التفاعلي.
+
+الإعدادات:
+  --غير-موثوق
+    يمنع المستخدم من استخدام الخواص الخطيرة مثل قراءة الملفات وتغيير محتواها (لاحظ: يجب عليكم توفير الملف).
+  --الإصدار
+    يقوم بطباعة الإصدار المستخدم حالياً (لاحظ: هذا الأمر يتجاهل الملف).
+  --ساعد
+    يقوم بطباعة هذه الرسالة (لاحظ: هذا الأمر يتجاهل الملف).
+";
+
 fn main() {
-    use Mode::*;
-
-    let mode = Mode::try_from(env::args())
-        .map_err(|_| exit(exitcode::USAGE))
-        .unwrap();
-
-    match mode {
-        Version => println!("{}", env!("CARGO_PKG_VERSION")),
-        Help => print!("{}", include_str!("../help.md")),
-        Repl => run_repl(),
-        File { path, untrusted } => run_file(path, untrusted)
-            .map_err(|_| exit(exitcode::DATAERR))
-            .unwrap(),
-    };
+    match get_action() {
+        Ok(action) => match action {
+            Action::Eval(EvalMode::File(path, untrusted)) => run_file(path, untrusted),
+            Action::Eval(EvalMode::Repl) => run_repl(),
+            Action::Version => println!("{}", env!("CARGO_PKG_VERSION")),
+            Action::Help => {
+                println!(
+                    "{} {}\n\n{HELP_MSG}",
+                    env!("CARGO_PKG_NAME"),
+                    env!("CARGO_PKG_VERSION")
+                );
+            }
+        },
+        Err(err) => {
+            eprintln!("{err}");
+            eprintln!("لمعرفة كيفية استخدام اللغة بطريقة صحيحة إستخدم '--ساعد'");
+            exit(USAGE)
+        }
+    }
 }
 
 fn run_repl() {
@@ -57,10 +77,23 @@ fn run_line(vm: &mut Vm, line: String) -> Result<(), ()> {
     vm.run(compile(line, None)?)
 }
 
-fn run_file(path: PathBuf, untrusted: bool) -> Result<(), ()> {
+fn run_file(path: PathBuf, untrusted: bool) {
     let mut vm = Vm::new(untrusted);
-    let source = fs::read_to_string(&path).map_err(|err| eprintln!("{err}"))?;
-    vm.run(compile(source, Some(path))?)
+    let source = match fs::read_to_string(&path) {
+        Ok(source) => source,
+        Err(err) => {
+            eprintln!("{err}");
+            exit(DATAERR)
+        }
+    };
+    let function = match compile(source, Some(path)) {
+        Ok(function) => function,
+        Err(_) => exit(DATAERR),
+    };
+    match vm.run(function) {
+        Ok(_) => {}
+        Err(_) => exit(DATAERR),
+    }
 }
 
 fn compile(source: String, path: Option<PathBuf>) -> Result<Function, ()> {

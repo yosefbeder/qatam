@@ -33,7 +33,7 @@ def sync(dir: Path, should_build: bool = True):
                 sync(path, False)
             if path.suffix == ".قتام":
                 process = subprocess.run(
-                    [BIN_DIR.joinpath("قتام.exe"), "--ملف", path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
+                    [BIN_DIR.joinpath("قتام.exe"), path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
                 snapshot_path = get_snapshot_path(dir, name)
                 open(snapshot_path, "w", encoding="utf-8").write(
                     serialize(process.returncode, process.stdout, process.stderr))
@@ -55,7 +55,7 @@ def run(dir: Path, should_build: bool = True):
                     raise RuntimeError(
                         f"The snapshot file {snapshot_path} does not exist\nhint: run the sync subcommand first")
                 process = subprocess.run(
-                    [BIN_DIR.joinpath("قتام.exe"), "--ملف", path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
+                    [BIN_DIR.joinpath("قتام.exe"), path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
                 res = serialize(process.returncode,
                                 process.stdout, process.stderr)
                 snapshot = open(snapshot_path, "r", encoding="utf-8").read(
