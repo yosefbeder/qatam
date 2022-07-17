@@ -1,17 +1,17 @@
 use super::token::Token;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Literal {
     Number(Rc<Token>),
     String(Rc<Token>),
     Bool(Rc<Token>),
     Nil(Rc<Token>),
     List(Vec<Expr>),
-    Object(Vec<(Rc<Token>, Option<Expr>)>),
+    Object(Vec<(Rc<Token>, Option<Expr>, Option<(Rc<Token>, Expr)>)>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Variable(Rc<Token>),
     Literal(Literal),
@@ -31,7 +31,7 @@ impl Expr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Stml {
     Block(Vec<Stml>),
     FunctionDecl(Rc<Token>, Vec<(Expr, Option<Expr>)>, Box<Stml>),

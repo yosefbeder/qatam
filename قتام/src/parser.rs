@@ -210,18 +210,32 @@ impl Parser {
         )))
     }
 
-    fn prop(&mut self) -> Result<(Rc<Token>, Option<Expr>)> {
+    fn prop(&mut self) -> Result<(Rc<Token>, Option<Expr>, Option<(Rc<Token>, Expr)>)> {
         self.consume(TokenType::Identifier)?;
         let key = self.clone_previous();
-        let value = if self.check_consume(TokenType::Colon) {
+        let mut value = if self.check_consume(TokenType::Colon) {
             Some(self.parse_expr()?)
         } else {
             None
         };
-        Ok((Rc::new(key), value))
+        let default = match value.clone() {
+            Some(Expr::Binary(token, lhs, rhs)) if token.typ == TokenType::Equal => {
+                value = Some(*lhs);
+                Some((token, *rhs))
+            }
+            None => {
+                if self.check_consume(TokenType::Equal) {
+                    Some((Rc::new(self.clone_previous()), self.parse_expr()?))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        Ok((Rc::new(key), value, default))
     }
 
-    fn props(&mut self) -> Result<Vec<(Rc<Token>, Option<Expr>)>> {
+    fn props(&mut self) -> Result<Vec<(Rc<Token>, Option<Expr>, Option<(Rc<Token>, Expr)>)>> {
         if self.check_consume(TokenType::CBrace) {
             return Ok(vec![]);
         }

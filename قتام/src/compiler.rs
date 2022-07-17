@@ -26,6 +26,7 @@ enum CompileError {
     InvalidImportExt(Rc<Token>),
     IOError(Rc<Token>, IOError),
     InvalidDestructure(Rc<Token>),
+    InvalidEqual(Rc<Token>),
 }
 
 impl fmt::Display for CompileError {
@@ -107,6 +108,13 @@ impl fmt::Display for CompileError {
                 write!(
                     f,
                     "في التوزيع يجب أن تكون العناصر المنتجة كلمات أو قوائم أو كائنات {}",
+                    token.get_pos()
+                )
+            }
+            Self::InvalidEqual(token) => {
+                write!(
+                    f,
+                    "لا يمكن استخدام '=' بعد المفتاح مباشراً في هذا السياق {}",
                     token.get_pos()
                 )
             }
@@ -372,7 +380,7 @@ impl<'a> Compiler<'a> {
 
     fn err(&mut self, err: CompileError) {
         eprintln!("{err}");
-        self.state.borrow_mut().had_err = true;
+        (*self.state).borrow_mut().had_err = true;
     }
 
     fn ip(&self) -> usize {
@@ -568,14 +576,23 @@ impl<'a> Compiler<'a> {
             }
             Literal::Object(items) => {
                 let mut size = 0;
-                for item in items {
-                    self.write_const(Value::new_string(item.0.lexeme.clone()), Rc::clone(&item.0))?;
-                    match &item.1 {
-                        Some(expr) => {
-                            self.expr(expr)?;
+                for (key, value, default) in items {
+                    self.write_const(Value::new_string(key.lexeme.clone()), Rc::clone(key))?;
+                    if let Some((token, default)) = default {
+                        if let Some(value) = value {
+                            self.binary(Rc::clone(token), value, default)?;
+                        } else {
+                            self.err(CompileError::InvalidEqual(Rc::clone(token)));
+                            return Err(());
                         }
-                        None => {
-                            self.get_variable(Rc::clone(&item.0))?;
+                    } else {
+                        match value {
+                            Some(expr) => {
+                                self.expr(expr)?;
+                            }
+                            None => {
+                                self.get_variable(Rc::clone(key))?;
+                            }
                         }
                     }
                     size += 1;
@@ -795,18 +812,24 @@ impl<'a> Compiler<'a> {
         params: &Vec<(Expr, Option<Expr>)>,
         body: &Stml,
     ) -> Result {
+        let drill_err = |_| {
+            self.state.borrow_mut().had_err = true;
+        };
         let mut compiler = Compiler::new_function(
             Some(name.lexeme.clone()),
             body,
             Rc::clone(&self.state),
             self.path.clone(),
         );
-        compiler.define_variable(Rc::clone(&name))?;
-        compiler.define_params(params, Rc::clone(&name))?;
+        compiler
+            .define_variable(Rc::clone(&name))
+            .map_err(drill_err)?;
+        compiler
+            .define_params(params, Rc::clone(&name))
+            .map_err(drill_err)?;
+        let function = compiler.compile().map_err(drill_err)?;
         self.write_closure(
-            compiler.compile().map_err(|_| {
-                self.state.borrow_mut().had_err = true;
-            })?,
+            function,
             &compiler.state.borrow().up_values,
             Rc::clone(&name),
         )?;
@@ -836,13 +859,23 @@ impl<'a> Compiler<'a> {
                 }
             }
             Expr::Literal(Literal::Object(props)) => {
-                for (key, _) in props {
+                let mut has_default = vec![];
+                for (key, _, default) in props {
                     self.write_const(Value::new_string(key.lexeme.clone()), Rc::clone(key))?;
+                    if let Some(default) = default {
+                        self.expr(&default.1)?;
+                        has_default.push(true);
+                    } else {
+                        has_default.push(false);
+                    }
                 }
                 self.chunk
                     .write_instr(UnpackObject, Some(Rc::clone(&token)));
                 self.chunk.write_byte(props.len() as u8);
-                for (key, expr) in props {
+                for flag in has_default {
+                    self.chunk.write_byte(if flag { 1 } else { 0 } as u8);
+                }
+                for (key, expr, _) in props {
                     match expr {
                         Some(definable) => {
                             self.definable(definable, Rc::clone(&token), false)?;
@@ -888,13 +921,23 @@ impl<'a> Compiler<'a> {
                 }
             }
             Expr::Literal(Literal::Object(props)) => {
-                for (key, _) in props {
+                let mut has_default = vec![];
+                for (key, _, default) in props {
                     self.write_const(Value::new_string(key.lexeme.clone()), Rc::clone(key))?;
+                    if let Some((_, expr)) = default {
+                        self.expr(expr)?;
+                        has_default.push(true);
+                    } else {
+                        has_default.push(false);
+                    }
                 }
                 self.chunk
                     .write_instr(UnpackObject, Some(Rc::clone(&token)));
                 self.chunk.write_byte(props.len() as u8);
-                for (key, expr) in props {
+                for flag in has_default {
+                    self.chunk.write_byte(if flag { 1 } else { 0 } as u8);
+                }
+                for (key, expr, _) in props {
                     match expr {
                         Some(settable) => {
                             self.settable(settable, Rc::clone(&token))?;
@@ -1104,15 +1147,15 @@ impl<'a> Compiler<'a> {
 
         let source = fs::read_to_string(&path)
             .map_err(|err| self.err(CompileError::IOError(path_token, err)))?;
-        let mut parser = Parser::new(source, Some(path.clone()));
-        let ast = parser.parse().map_err(|_| {
+        let drill_err = |_| {
             self.state.borrow_mut().had_err = true;
-        })?;
+        };
+        let mut parser = Parser::new(source, Some(path.clone()));
+        let ast = parser.parse().map_err(drill_err)?;
         let mut compiler = Compiler::new_module(&ast, path);
+        let function = compiler.compile().map_err(drill_err)?;
         self.write_closure(
-            compiler.compile().map_err(|_| {
-                self.state.borrow_mut().had_err = true;
-            })?,
+            function,
             &compiler.state.borrow().up_values,
             Rc::clone(&token),
         )?;

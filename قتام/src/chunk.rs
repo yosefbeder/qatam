@@ -297,7 +297,7 @@ impl Chunk {
                 return (buffer, 3);
             }
             Call | GetLocal | SetLocal | GetUpValue | SetUpValue | BuildList | BuildObject
-            | UnpackList | UnpackObject => {
+            | UnpackList => {
                 let oper = self.bytes[offset + 1] as usize;
                 buffer += format!("{}\n", oper).as_str();
                 return (buffer, 2);
@@ -316,6 +316,15 @@ impl Chunk {
                 }
 
                 return (buffer, 2 + up_values_count * 2);
+            }
+            UnpackObject => {
+                let len = self.bytes[offset + 1] as usize;
+                let mut has_default = vec![];
+                for idx in 0..len {
+                    has_default.push(self.bytes[offset + idx + 2]);
+                }
+                buffer += format!("{len} {has_default:?}\n").as_str();
+                return (buffer, 2 + len);
             }
             Unknown => unreachable!(),
         }

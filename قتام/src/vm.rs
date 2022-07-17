@@ -294,11 +294,16 @@ impl<'a, 'b> Frame<'a, 'b> {
         }
     }
 
-    fn read_byte(&self) -> usize {
+    /// offset gets added to the current ip
+    fn read_byte_at(&self, offset: usize) -> usize {
         self.get_closure()
             .get_chunk()
-            .get_byte(self.get_ip() + 1)
+            .get_byte(self.get_ip() + offset)
             .unwrap() as usize
+    }
+
+    fn read_byte(&self) -> usize {
+        self.read_byte_at(1)
     }
 
     fn read_up_value(&self, offset: usize) -> (bool, usize) {
@@ -956,27 +961,40 @@ impl<'a, 'b> Frame<'a, 'b> {
                     progress = 2;
                 }
                 UnpackObject => {
-                    let stack_len = self.get_state().stack.len();
                     let len = self.read_byte();
-                    let keys: Vec<_> = self
-                        .get_state_mut()
-                        .stack
-                        .drain(stack_len - len..)
-                        .map(|value| value.as_string())
-                        .collect();
+                    let mut keys = vec![];
+                    for mut idx in 0..len {
+                        // 1. Reverse idx
+                        idx = (len - 1) - idx;
+                        let has_default = self.read_byte_at(idx + 2) != 0;
+                        if has_default {
+                            let default = self.pop();
+                            let name = self.pop().as_string();
+                            keys.push((name, Some(default)));
+                        } else {
+                            keys.push((self.pop().as_string(), None));
+                        }
+                    }
                     let items = match self.pop() {
                         Value::Object(Object::Object(items)) => items,
                         _ => {
                             err!("يجب أن تكون القيمة التي ستوزع باستخدام '{}' كائناً".to_string())
                         }
                     };
-                    for key in keys.iter().rev() {
-                        if !items.borrow().contains_key(key) {
-                            err!(format!("{key} غير موجود في الكائن"))
+                    for (name, default) in keys {
+                        if !items.borrow().contains_key(&name) {
+                            if let Some(default) = default {
+                                self.push(default);
+                            } else {
+                                err!(format!(
+                                    "{name} غير موجود في الكائن، لحل هذا يمكنك وضع قيمة إفتراضية"
+                                ))
+                            }
+                        } else {
+                            self.push(items.borrow()[&name].clone())
                         }
-                        self.push(items.borrow()[key].clone())
                     }
-                    progress = 2;
+                    progress = 2 + len as i32;
                 }
                 PushTmp => {
                     let popped = self.pop();
