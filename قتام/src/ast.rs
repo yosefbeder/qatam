@@ -35,7 +35,7 @@ impl Expr {
 pub enum Stml {
     Block(Vec<Stml>),
     FunctionDecl(Rc<Token>, Vec<(Expr, Option<Expr>)>, Box<Stml>),
-    VarDecl(Rc<Token>, Expr, Option<Expr>),
+    VarDecl(Rc<Token>, Vec<(Expr, Option<Expr>)>),
     Return(Rc<Token>, Option<Expr>),
     Throw(Rc<Token>, Option<Expr>),
     TryCatch(Box<Stml>, Rc<Token>, Box<Stml>),

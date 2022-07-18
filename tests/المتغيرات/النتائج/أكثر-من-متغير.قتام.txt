@@ -1,0 +1,6 @@
+returncode: 0
+stdout:
+0
+1
+2
+stderr:

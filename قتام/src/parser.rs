@@ -616,8 +616,7 @@ impl Parser {
         })
     }
 
-    fn var_decl(&mut self) -> Result<Stml> {
-        let token = self.clone_previous();
+    fn var_decl(&mut self) -> Result<(Expr, Option<Expr>)> {
         let definable = self.definable()?;
         let initializer = if !definable.is_variable() {
             self.consume(TokenType::Equal)?;
@@ -629,7 +628,18 @@ impl Parser {
                 None
             }
         };
-        Ok(Stml::VarDecl(Rc::new(token), definable, initializer))
+        Ok((definable, initializer))
+    }
+
+    fn vars_decl(&mut self) -> Result<Stml> {
+        let token = self.clone_previous();
+        let mut decls = vec![self.var_decl()?];
+
+        while self.check_consume(TokenType::Comma) {
+            decls.push(self.var_decl()?);
+        }
+
+        Ok(Stml::VarDecl(Rc::new(token), decls))
     }
 
     fn for_in(&mut self) -> Result<Stml> {
@@ -670,7 +680,7 @@ impl Parser {
                 Box::new(self.function_decl()?),
             ))
         } else if self.check_consume(TokenType::Var) {
-            Ok(Stml::Export(Rc::new(token), Box::new(self.var_decl()?)))
+            Ok(Stml::Export(Rc::new(token), Box::new(self.vars_decl()?)))
         } else {
             let token = self.current_token().clone();
             self.parse_err(ParseError::ExpectedInstead(
@@ -685,7 +695,7 @@ impl Parser {
         if self.check_consume(TokenType::Function) {
             self.function_decl()
         } else if self.check_consume(TokenType::Var) {
-            self.var_decl()
+            self.vars_decl()
         } else if self.check_consume(TokenType::Export) {
             self.export_stml()
         } else if self.check_consume(TokenType::Import) {

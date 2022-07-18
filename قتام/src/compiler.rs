@@ -955,19 +955,16 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn var_decl(
-        &mut self,
-        token: Rc<Token>,
-        definable: &Expr,
-        initializer: &Option<Expr>,
-    ) -> Result {
-        match initializer {
-            Some(expr) => self.expr(expr)?,
-            None => {
-                self.write_const(Value::Nil, Rc::clone(&token))?;
-            }
-        };
-        self.definable(definable, token, true)?;
+    fn var_decl(&mut self, token: Rc<Token>, decls: &Vec<(Expr, Option<Expr>)>) -> Result {
+        for (definable, initializer) in decls {
+            match initializer {
+                Some(expr) => self.expr(expr)?,
+                None => {
+                    self.write_const(Value::Nil, Rc::clone(&token))?;
+                }
+            };
+            self.definable(definable, Rc::clone(&token), true)?;
+        }
         Ok(())
     }
 
@@ -1180,8 +1177,8 @@ impl<'a> Compiler<'a> {
                     }
                 }
             }
-            Stml::VarDecl(token, definable, initializer) => {
-                self.var_decl(Rc::clone(token), definable, initializer)?;
+            Stml::VarDecl(token, decls) => {
+                self.var_decl(Rc::clone(token), decls)?;
             }
             _ => unreachable!(),
         };
@@ -1281,8 +1278,8 @@ impl<'a> Compiler<'a> {
             Stml::FunctionDecl(name, params, body) => {
                 self.function_decl(Rc::clone(name), params, body)?
             }
-            Stml::VarDecl(token, definable, initializer) => {
-                self.var_decl(Rc::clone(token), definable, initializer)?;
+            Stml::VarDecl(token, decls) => {
+                self.var_decl(Rc::clone(token), decls)?;
             }
             Stml::Return(token, value) => self.return_stml(Rc::clone(token), value)?,
             Stml::Throw(token, value) => self.throw_stml(Rc::clone(token), value)?,
