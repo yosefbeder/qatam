@@ -9,6 +9,32 @@ use std::{
     cell::RefCell, ffi::OsStr, fmt, fs, io::Error as IOError, path::PathBuf, rc::Rc, result,
 };
 
+#[derive(Debug, Clone)]
+enum ImportPathType {
+    Lib,
+    Relative,
+    Absolute,
+}
+
+#[derive(Debug, Clone)]
+struct ImportPath {
+    typ: ImportPathType,
+    path: PathBuf,
+}
+
+impl ImportPath {
+    fn new(typ: ImportPathType, path: PathBuf) -> Self {
+        Self { typ, path }
+    }
+    fn is_valid(&self) -> bool {
+        use ImportPathType::*;
+        match self.typ {
+            Lib => self.path.extension() == None,
+            _ => self.path.extension() == Some(OsStr::new("قتام")),
+        }
+    }
+}
+
 type Result = result::Result<(), ()>;
 
 #[derive(Debug)]
@@ -23,7 +49,7 @@ enum CompileError {
     InvalidContinue(Rc<Token>),
     InvalidImport(Rc<Token>),
     InvalidExport(Rc<Token>),
-    InvalidImportExt(Rc<Token>),
+    InvalidImportExt(Rc<Token>, ImportPathType),
     IOError(Rc<Token>, IOError),
     InvalidDestructure(Rc<Token>),
     InvalidEqual(Rc<Token>),
@@ -93,13 +119,20 @@ impl fmt::Display for CompileError {
             Self::InvalidExport(token) => {
                 write!(f, "لا يمكن التصدير من داخل الدوال {}", token.get_pos())
             }
-            Self::InvalidImportExt(token) => {
-                write!(
+            Self::InvalidImportExt(token, import_path) => match import_path {
+                ImportPathType::Lib => {
+                    write!(
+                        f,
+                        "في حالة الاستيراد من أي مكتبة يجب عليك عدم إضافة الإمتداد \"قتام\" {}",
+                        token.get_pos()
+                    )
+                }
+                _ => write!(
                     f,
                     "يجب أن يكون إمتداد الملف المستورد 'قتام' {}",
                     token.get_pos()
-                )
-            }
+                ),
+            },
             Self::IOError(token, err) => {
                 writeln!(f, "حدث خطأ من نظام التشغيل {}", token.get_pos())?;
                 write!(f, "{err}")
@@ -1118,30 +1151,63 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    /// creates a path out of the path of the current compiler and the string stored in token
-    fn path(&mut self, token: Rc<Token>) -> result::Result<PathBuf, ()> {
-        let tmp = self.string(token)?;
-        if let Some(cur_path) = &self.path {
-            if let Some(dir) = cur_path.parent() {
-                return Ok(dir.join(tmp));
-            }
-        }
-        Ok(PathBuf::from(tmp))
+    // creates a path out of the path of the current compiler and the string stored in token
+    // fn path(&mut self, token: Rc<Token>) -> result::Result<PathBuf, ()> {
+    //     let tmp = self.string(token)?;
+    //     if let Some(cur_path) = &self.path {
+    //         if let Some(dir) = cur_path.parent() {
+    //             return Ok(dir.join(tmp));
+    //         }
+    //     }
+    //     Ok(PathBuf::from(tmp))
+    // }
+
+    fn import_path(&mut self, token: Rc<Token>) -> result::Result<ImportPath, ()> {
+        use ImportPathType::*;
+        let path = PathBuf::from(self.string(token)?);
+
+        Ok(if path.is_absolute() {
+            ImportPath::new(Absolute, path)
+        } else if path.starts_with(".") || path.starts_with("..") {
+            ImportPath::new(
+                Relative,
+                match &self.path {
+                    Some(cur) => {
+                        if let Some(dir) = cur.parent() {
+                            dir.join(path)
+                        } else {
+                            path
+                        }
+                    }
+                    None => path,
+                },
+            )
+        } else {
+            ImportPath::new(Lib, PathBuf::from("lib").join(path))
+        })
     }
 
     fn import_stml(&mut self, token: Rc<Token>, definable: &Expr, path_token: Rc<Token>) -> Result {
+        use ImportPathType::*;
         if !self.can_import() {
             self.err(CompileError::InvalidImport(token));
             return Err(());
         }
 
-        let path = self.path(Rc::clone(&path_token))?;
+        let import_path = self.import_path(Rc::clone(&path_token))?;
 
-        if path.extension() != Some(OsStr::new("قتام")) {
-            self.err(CompileError::InvalidImportExt(Rc::clone(&path_token)));
+        if !import_path.is_valid() {
+            self.err(CompileError::InvalidImportExt(
+                Rc::clone(&path_token),
+                import_path.typ,
+            ));
             return Err(());
         }
 
+        let path = match import_path.typ {
+            Lib => import_path.path.with_extension("قتام"),
+            _ => import_path.path,
+        };
         let source = fs::read_to_string(&path)
             .map_err(|err| self.err(CompileError::IOError(path_token, err)))?;
         let drill_err = |_| {
