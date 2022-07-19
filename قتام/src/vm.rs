@@ -688,7 +688,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                 GetGlobal => {
                     let name = self.pop().to_string();
                     if !self.get_state().globals.contains_key(&name) {
-                        err!("لا يوجد متغير بهذا الاسم".to_string());
+                        err!(format!("لا يوجد متغير يسمى {name}"));
                     }
                     self.push(self.get_state().globals.get(&name).unwrap().clone());
                 }
