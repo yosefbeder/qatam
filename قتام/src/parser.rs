@@ -256,16 +256,10 @@ impl Parser {
 
     fn lambda(&mut self) -> Result<Expr> {
         let token = self.clone_previous();
-        if token.typ == TokenType::Or {
-            self.consume(TokenType::OBrace)?;
-            let body = self.block()?;
-            Ok(Expr::Lambda(Rc::new(token), vec![], Box::new(body)))
-        } else {
-            let params = self.params(TokenType::Pipe)?;
-            self.consume(TokenType::OBrace)?;
-            let body = self.block()?;
-            Ok(Expr::Lambda(Rc::new(token), params, Box::new(body)))
-        }
+        let params = self.params(TokenType::Pipe)?;
+        self.consume(TokenType::OBrace)?;
+        let body = self.block()?;
+        Ok(Expr::Lambda(Rc::new(token), params, Box::new(body)))
     }
 
     fn literal(&mut self) -> Result<Expr> {
@@ -278,7 +272,7 @@ impl Parser {
             TokenType::Nil => Ok(Expr::Literal(Literal::Nil(Rc::new(token)))),
             TokenType::OBracket => self.list(),
             TokenType::OBrace => self.object(),
-            TokenType::Pipe | TokenType::Or => self.lambda(),
+            TokenType::Pipe => self.lambda(),
             _ => unreachable!(),
         }
     }

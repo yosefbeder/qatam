@@ -110,6 +110,8 @@ impl Lexer {
                 "صدّر" => TokenType::Export,
                 "لكل" => TokenType::For,
                 "في" => TokenType::In,
+                "و" => TokenType::And,
+                "أو" => TokenType::Or,
                 _ => TokenType::Identifier,
             },
             Rc::clone(&self.source),
@@ -218,6 +220,7 @@ impl Lexer {
                 '،' => self.pop_token(TokenType::Comma),
                 '؟' => self.pop_token(TokenType::QuestionMark),
                 ':' => self.pop_token(TokenType::Colon),
+                '|' => self.pop_token(TokenType::Pipe),
                 '=' => {
                     if self.check('=') {
                         self.next();
@@ -248,22 +251,6 @@ impl Lexer {
                         self.pop_token(TokenType::LessEqual)
                     } else {
                         self.pop_token(TokenType::Less)
-                    }
-                }
-                '&' => {
-                    if self.check('&') {
-                        self.next();
-                        self.pop_token(TokenType::And)
-                    } else {
-                        self.pop_unknown_token()
-                    }
-                }
-                '|' => {
-                    if self.check('|') {
-                        self.next();
-                        self.pop_token(TokenType::Or)
-                    } else {
-                        self.pop_token(TokenType::Pipe)
                     }
                 }
                 '"' => {
