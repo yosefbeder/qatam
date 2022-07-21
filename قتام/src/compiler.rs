@@ -219,7 +219,7 @@ impl Loop {
 #[derive(Debug, Clone)]
 pub struct CompilerState {
     scope_depth: usize,
-    locals: Vec<Local>, //TODO make it limited as the stack is
+    locals: Vec<Local>, //TODO make it limited as the stack is (supposed to be)
     up_values: Vec<UpValue>,
     had_err: bool,
     loops: Vec<Loop>,
@@ -1310,7 +1310,7 @@ impl<'a> Compiler<'a> {
         // 2. Check the next element
         let start = self.ip();
         self.expr(iterator)?;
-        self.chunk.write_instr(Size, Some(Rc::clone(&token))); //TODO find a better token to report this err
+        self.chunk.write_instr(Size, Some(Rc::clone(&token)));
         get_counter!();
         self.chunk.write_instr(Greater, None);
 

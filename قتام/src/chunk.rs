@@ -415,9 +415,8 @@ impl Chunk {
         token: Option<Rc<Token>>,
     ) -> Result<(), ()> {
         self.write_const(Value::new_function(function), token.clone())?;
-        //TODO consider not appending regular functions as closures optimization
         self.write_instr(Closure, token);
-        self.write_byte(up_values.len() as u8); //TODO make sure this it's convertable to u8
+        self.write_byte(up_values.len() as u8);
         for up_value in up_values {
             self.write_byte(up_value.is_local as u8);
             self.write_byte(up_value.idx as u8);
@@ -425,7 +424,6 @@ impl Chunk {
         Ok(())
     }
 
-    //TODO have another look at usize -> u16 conversions
     pub fn write_loop(&mut self, start: usize, token: Option<Rc<Token>>) {
         self.write_instr(Loop, token);
         let size = self.len() - 1 - start;

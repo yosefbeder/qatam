@@ -434,7 +434,6 @@ impl ops::Mul for Value {
     fn mul(self, other: Self) -> Self::Output {
         match (self, other) {
             (Self::Number(a), Self::Number(b)) => Self::Number(a * b),
-            //TODO consider adding support for strings (with numbers)
             _ => unreachable!(),
         }
     }
@@ -471,7 +470,6 @@ impl ops::Not for Value {
 }
 
 impl cmp::PartialEq for Value {
-    //TODO add comparing other object types
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Number(a), Self::Number(b)) => a == b,

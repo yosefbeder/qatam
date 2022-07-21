@@ -54,7 +54,6 @@ impl Lexer {
         }
     }
 
-    //TODO improve the performance of these helper functions
     fn peek(&self, distance: usize) -> Option<char> {
         self.source.chars().nth(self.current + distance)
     }

@@ -19,7 +19,7 @@ pub enum Expr {
     Binary(Rc<Token>, Box<Expr>, Box<Expr>),
     Call(Rc<Token>, Box<Expr>, Vec<Expr>),
     Member(Rc<Token>, Box<Expr>, Box<Expr>),
-    Lambda(Rc<Token>, Vec<(Expr, Option<Expr>)>, Box<Stml>),
+    Lambda(Rc<Token>, Vec<(Expr, Option<Expr>)>, Box<Stml>), //TODO make put lambda in literals instead
 }
 
 impl Expr {

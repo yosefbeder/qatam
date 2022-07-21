@@ -798,7 +798,6 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                 }
                 Closure => {
-                    //TODO test
                     let count = self.read_byte() as usize;
                     let function = self.pop().as_function();
                     let up_values = {
