@@ -1,68 +1,52 @@
-use std::{convert::Into, env, fmt, option, path::PathBuf};
+use std::convert::{From, Into};
+use std::{env, fmt, path::PathBuf};
 
 #[derive(Debug, Clone)]
-enum Option {
+enum Setting {
     Version,
     Help,
     Untrusted,
+    Unknown(String),
 }
 
 const VERSION: &str = "--الإصدار";
 const HELP: &str = "--ساعد";
 const UNTRUSTED: &str = "--غير-موثوق";
 
-impl TryFrom<&str> for Option {
-    type Error = ();
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            VERSION => Ok(Self::Version),
-            HELP => Ok(Self::Help),
-            UNTRUSTED => Ok(Self::Untrusted),
-            _ => Err(()),
+impl From<String> for Setting {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            VERSION => Self::Version,
+            HELP => Self::Help,
+            UNTRUSTED => Self::Untrusted,
+            string => Self::Unknown(string.to_owned()),
         }
     }
 }
 
-impl Into<&str> for Option {
-    fn into(self) -> &'static str {
+impl Into<String> for Setting {
+    fn into(self) -> String {
         match self {
-            Self::Version => VERSION,
-            Self::Help => HELP,
-            Self::Untrusted => UNTRUSTED,
+            Self::Version => VERSION.to_owned(),
+            Self::Help => HELP.to_owned(),
+            Self::Untrusted => UNTRUSTED.to_owned(),
+            Self::Unknown(string) => string,
         }
     }
 }
 
 #[derive(Debug, Clone)]
 enum Token {
-    Option(Option),
+    Setting(Setting),
     Path(PathBuf),
 }
 
-#[derive(Debug, Clone)]
-pub enum LexError {
-    UnknownOption(String),
-}
-
-impl fmt::Display for LexError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownOption(string) => write!(f, "لا يوجد شئ من الإعدادات يسمى {string}"),
-        }
-    }
-}
-
-fn lex(iter: &mut env::Args) -> Result<Vec<Token>, LexError> {
+fn lex(iter: &mut env::Args) -> Result<Vec<Token>, ParseError> {
     iter.next();
     let mut tokens = vec![];
     while let Some(string) = iter.next() {
         match string.as_str() {
-            x if x.starts_with("--") => match Option::try_from(x) {
-                Ok(option) => tokens.push(Token::Option(option)),
-                Err(_) => {
-                    LexError::UnknownOption(string);
-                }
-            },
+            x if x.starts_with("--") => tokens.push(Token::Setting(Setting::from(string))),
             path => tokens.push(Token::Path(PathBuf::from(path))),
         }
     }
@@ -71,21 +55,45 @@ fn lex(iter: &mut env::Args) -> Result<Vec<Token>, LexError> {
 
 #[derive(Debug, Clone)]
 struct Args {
-    options: Vec<Option>,
-    path: option::Option<PathBuf>,
+    settings: Vec<Setting>,
+    path: Option<PathBuf>,
 }
 
 impl Args {
-    fn new(options: Vec<Option>, path: option::Option<PathBuf>) -> Self {
-        Self { options, path }
+    fn new(settings: Vec<Setting>, path: Option<PathBuf>) -> Self {
+        Self { settings, path }
     }
 }
 
-fn parse(tokens: Vec<Token>) -> Args {
+#[derive(Debug, Clone)]
+pub enum ParseError {
+    ExpectedPathOrSetting(String),
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ExpectedPathOrSetting(string) => {
+                write!(
+                    f,
+                    "توقعت مسار ملف أو أحد الإعدادات ولكن حصلت على \"{string}\""
+                )
+            }
+        }
+    }
+}
+
+fn parse(tokens: Vec<Token>) -> Result<Args, ParseError> {
     let mut iter = tokens.iter().peekable();
-    let mut options = vec![];
-    while let Some(Token::Option(option)) = iter.peek() {
-        options.push(option.to_owned());
+    let mut settings = vec![];
+    while let Some(Token::Setting(setting)) = iter.peek() {
+        match setting {
+            Setting::Unknown(string) => {
+                return Err(ParseError::ExpectedPathOrSetting(string.clone()))
+            }
+            _ => {}
+        }
+        settings.push(setting.to_owned());
         iter.next();
     }
     let path = if let Some(Token::Path(path)) = iter.next() {
@@ -93,7 +101,7 @@ fn parse(tokens: Vec<Token>) -> Args {
     } else {
         None
     };
-    Args::new(options, path)
+    Ok(Args::new(settings, path))
 }
 
 #[derive(Debug, Clone)]
@@ -127,14 +135,15 @@ impl TryFrom<Args> for Action {
     fn try_from(value: Args) -> Result<Self, Self::Error> {
         let mut expect_path = false;
         let mut untrusted = false;
-        for option in value.options {
-            match option {
-                Option::Help => return Ok(Self::Help),
-                Option::Version => return Ok(Self::Version),
-                Option::Untrusted => {
+        for setting in value.settings {
+            match setting {
+                Setting::Help => return Ok(Self::Help),
+                Setting::Version => return Ok(Self::Version),
+                Setting::Untrusted => {
                     expect_path = true;
                     untrusted = true;
                 }
+                _ => unreachable!(),
             }
         }
         match value.path {
@@ -152,22 +161,22 @@ impl TryFrom<Args> for Action {
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    Lex(LexError),
+    Parse(ParseError),
     Compile(CompileError),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Lex(err) => write!(f, "{err}"),
+            Self::Parse(err) => write!(f, "{err}"),
             Self::Compile(err) => write!(f, "{err}"),
         }
     }
 }
 
-impl From<LexError> for Error {
-    fn from(err: LexError) -> Self {
-        Self::Lex(err)
+impl From<ParseError> for Error {
+    fn from(err: ParseError) -> Self {
+        Self::Parse(err)
     }
 }
 
@@ -179,6 +188,6 @@ impl From<CompileError> for Error {
 
 pub fn get_action() -> Result<Action, Error> {
     let tokens = lex(&mut env::args())?;
-    let args = parse(tokens);
+    let args = parse(tokens)?;
     Ok(Action::try_from(args)?)
 }
