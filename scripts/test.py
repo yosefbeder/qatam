@@ -23,9 +23,9 @@ def get_snapshot_path(dir: Path, name: str) -> Path:
 
 
 def sync(dir: Path, should_build: bool = True):
-    clean(dir)
     if should_build:
-        subprocess.run(["cargo", "build", "--bin", "قتام"])
+        subprocess.run(["cargo", "build"])
+    clean(dir)
     try:
         for name in listdir(dir):
             path = dir.joinpath(name)
@@ -43,7 +43,7 @@ def sync(dir: Path, should_build: bool = True):
 
 def run(dir: Path, should_build: bool = True):
     if should_build:
-        subprocess.run(["cargo", "build", "--bin", "قتام"])
+        subprocess.run(["cargo", "build"])
     try:
         for name in listdir(dir):
             path = dir.joinpath(name)

@@ -1,17 +1,13 @@
-returncode: 0
+returncode: 65
 stdout:
 صحيح
 صحيح
 صحيح
 صحيح
-صحيح
-خطأ
-صحيح
-خطأ
-صحيح
-خطأ
-صحيح
-خطأ
-صحيح
-خطأ
 stderr:
+خطأ تنفيذي: The system cannot find the file specified. (os error 2)
+  --> tests\العبارات\التساوي.قتام
+   | 
+11 | متغير ملف = إفتح("README.md"، "قراءة")
+   | 
+من دالة غير معروفة السطر رقم 11
