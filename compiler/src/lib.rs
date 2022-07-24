@@ -9,6 +9,11 @@ use parser::Parser;
 use std::{cell::RefCell, ffi::OsStr, fmt, fs, io, path::PathBuf, rc::Rc};
 use value::{Arity, ArityType::*, Function, Value};
 
+const LIB: [(&str, &str); 2] = [
+    ("الأساسية", include_str!("../../lib/الأساسية.قتام")),
+    ("النصوص", include_str!("../../lib/النصوص.قتام")),
+];
+
 #[derive(Debug, Clone)]
 pub enum ImportPathType {
     Lib,
@@ -47,6 +52,7 @@ pub enum CompileError {
     InvalidContinue(Rc<Token>),
     InvalidImport(Rc<Token>),
     ImportParserError(Rc<Token>, Vec<parser::Error>),
+    UnexistedLib(Rc<Token>),
     InvalidExport(Rc<Token>),
     InvalidImportExt(Rc<Token>, ImportPathType),
     IOError(Rc<Token>, Rc<io::Error>),
@@ -121,6 +127,7 @@ impl fmt::Display for CompileError {
                 }
                 _ => write!(f, "يجب أن يكون إمتداد الملف المستورد 'قتام'\n{token}"),
             },
+            Self::UnexistedLib(token) => write!(f, "لا توجد مكتبة تسمى {}\n{token}", token.lexeme),
             Self::IOError(token, err) => {
                 writeln!(f, "حدث خطأ من نظام التشغيل\n{}", token)?;
                 write!(f, "{err}")
@@ -1160,7 +1167,7 @@ impl<'a> Compiler<'a> {
                 },
             )
         } else {
-            ImportPath::new(Lib, PathBuf::from("lib").join(path))
+            ImportPath::new(Lib, path)
         })
     }
 
@@ -1185,18 +1192,26 @@ impl<'a> Compiler<'a> {
             ));
             return Err(());
         }
-
-        let path = match import_path.typ {
-            Lib => import_path.path.with_extension("قتام"),
-            _ => import_path.path,
+        let source = match import_path.typ {
+            Lib => {
+                match LIB
+                    .binary_search_by(|(name, _)| (*name).cmp(import_path.path.to_str().unwrap()))
+                {
+                    Ok(idx) => LIB[idx].1.to_owned(),
+                    Err(_) => {
+                        self.err(CompileError::UnexistedLib(Rc::clone(&path_token)));
+                        return Err(());
+                    }
+                }
+            }
+            _ => fs::read_to_string(&import_path.path)
+                .map_err(|err| self.err(CompileError::IOError(path_token, Rc::new(err))))?,
         };
-        let source = fs::read_to_string(&path)
-            .map_err(|err| self.err(CompileError::IOError(path_token, Rc::new(err))))?;
-        let mut parser = Parser::new(source, Some(path.clone()));
+        let mut parser = Parser::new(source, Some(import_path.path.clone()));
         let ast = parser.parse().map_err(|errors| {
             self.err(CompileError::ImportParserError(Rc::clone(&token), errors))
         })?;
-        let mut compiler = Compiler::new_module(&ast, path);
+        let mut compiler = Compiler::new_module(&ast, import_path.path);
         let function = compiler.compile().map_err(|errors| {
             for err in errors {
                 self.err(err)
