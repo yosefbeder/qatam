@@ -65,17 +65,17 @@ impl fmt::Display for CompileError {
         write!(f, "{}", "خطأ ترجمي: ".bright_red())?;
         match self {
             Self::InvalidSpecialChar(token, got) => {
+                writeln!(f, "استخدام خاطئ ل\"\\\"\n{token}")?;
                 if let Some(c) = got {
-                    writeln!(f, "لا يمكن ل'\\' أن يكون متبوعاً ب'{c}' حيث يتبع فقط ب:")?;
+                    writeln!(f, "لا يمكن ل\"\\\" أن يكون متبوعاً ب\"{c}\" حيث يتبع فقط ب:")?;
                 } else {
-                    writeln!(f, "يجب أن يتبع '\\' بأحد هذه الخيارات:")?;
+                    writeln!(f, "يجب أن يتبع \"\\\" بأحد هذه الخيارات:")?;
                 }
-                writeln!(f, "- 'n': سطر جديد")?;
-                writeln!(f, "- 'r': للرجوع لبداية السطر (لا يجب عليك استخدامها إلا إذا كنت عالماً بما تفعل، وإن أردت الإستزادة عنها يمكنك البحث عن carriage return)")?;
-                writeln!(f, "- 't': يوافق الضغط على مفتاح tab")?;
-                writeln!(f, "- '\"': لإضافة '\"'")?;
-                writeln!(f, "- '\\': لإضافة '\\'")?;
-                write!(f, "{token}")
+                writeln!(f, "- \"n\": سطر جديد")?;
+                writeln!(f, "- \"r\": للرجوع لبداية السطر")?;
+                writeln!(f, "- \"t\": يوافق الضغط على مفتاح تاب")?;
+                writeln!(f, "- '\"': لإضافة \"")?;
+                write!(f, "- \"\\\": لإضافة \"\\\"")
             }
             Self::TooManyConsts(token) => {
                 writeln!(f, "تم إيراد الكثير من الثوابت في هذه الدالة\n{token}")?;
@@ -87,7 +87,7 @@ impl fmt::Display for CompileError {
             Self::SameVarInScope(token) => {
                 write!(
                     f,
-                    "المتغير '{}' قد تم تعريفيه في نفس المجموعة من قبل\n{token}",
+                    "المتغير \"{}\" قد تم تعريفيه في نفس المجموعة من قبل\n{token}",
                     token.lexeme
                 )
             }
@@ -95,12 +95,16 @@ impl fmt::Display for CompileError {
                 write!(f, "لا يمكن أن يكون للدالة أكثر من 255 مدخل\n{token}")
             }
             Self::InvalidReturn(token) => {
-                write!(f, "لا يمكن استخدام '{}' خارج الدوال\n{token}", token.lexeme)
+                write!(
+                    f,
+                    "لا يمكن استخدام \"{}\" خارج الدوال\n{token}",
+                    token.lexeme
+                )
             }
             Self::InvalidBreak(token) | Self::InvalidContinue(token) => {
                 write!(
                     f,
-                    "لا يمكن استخدام '{}' خارج الحلقات التكرارية\n{token}",
+                    "لا يمكن استخدام \"{}\" خارج الحلقات التكرارية\n{token}",
                     token.lexeme,
                 )
             }
@@ -125,7 +129,7 @@ impl fmt::Display for CompileError {
                         token
                     )
                 }
-                _ => write!(f, "يجب أن يكون إمتداد الملف المستورد 'قتام'\n{token}"),
+                _ => write!(f, "يجب أن يكون إمتداد الملف المستورد \"قتام\"\n{token}"),
             },
             Self::UnexistedLib(token) => write!(f, "لا توجد مكتبة تسمى {}\n{token}", token.lexeme),
             Self::IOError(token, err) => {
@@ -141,7 +145,7 @@ impl fmt::Display for CompileError {
             Self::InvalidEqual(token) => {
                 write!(
                     f,
-                    "لا يمكن استخدام '=' بعد المفتاح مباشراً في هذا السياق\n{token}",
+                    "لا يمكن استخدام \"=\" بعد المفتاح مباشراً في هذا السياق\n{token}",
                 )
             }
         }

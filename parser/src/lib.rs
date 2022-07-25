@@ -56,12 +56,12 @@ impl fmt::Display for ParseError {
                 let got: &str = token.typ.to_owned().into();
                 write!(
                     f,
-                    "توقعت {} ولكن حصلت على '{got} '\n{token}",
+                    "توقعت {} ولكن حصلت على \"{got}\"\n{token}",
                     expected
                         .iter()
                         .map(|typ| {
                             let as_str: &str = typ.to_owned().into();
-                            format!("'{as_str}'")
+                            format!("\"{as_str}\"")
                         })
                         .collect::<Vec<_>>()
                         .join(" أو "),
@@ -69,7 +69,7 @@ impl fmt::Display for ParseError {
             }
             Self::ExpectedExpr(token) => {
                 let got: &str = token.typ.to_owned().into();
-                write!(f, "توقعت عبارة ولكن حصلت على '{got}'\n{token}")
+                write!(f, "توقعت عبارة ولكن حصلت على \"{got}\"\n{token}")
             }
             Self::InvalidRhs(token) => {
                 write!(f, "الجانب الأيمن لعلامة التساوي غير صحيح\n{token}")
