@@ -2,8 +2,12 @@ use super::Frame;
 use compiler::value::{Arity, ArityType::*, Native, Object, Value};
 use rand::prelude::*;
 use std::fs::{self, OpenOptions};
-use std::io::{prelude::*, stdin};
+use std::io::{self, prelude::*, stdin};
 use std::{cell::RefCell, collections::HashMap, process, rc::Rc, time::SystemTime};
+
+fn map_os_err(err: io::Error) -> Value {
+    Value::new_string(err.to_string())
+}
 
 pub fn as_string(frame: &dyn compiler::value::Frame, argc: usize) -> Result<Value, Value> {
     Frame::check_arity(Arity::new(Fixed, 1, 0), argc)?;
@@ -213,7 +217,7 @@ pub fn print(frame: &dyn compiler::value::Frame, argc: usize) -> Result<Value, V
 pub fn input(_: &dyn compiler::value::Frame, argc: usize) -> Result<Value, Value> {
     Frame::check_arity(Arity::new(Fixed, 0, 0), argc)?;
     let mut buffer = String::new();
-    stdin().read_line(&mut buffer).unwrap();
+    stdin().read_line(&mut buffer).map_err(map_os_err)?;
     buffer.pop();
     Ok(Value::new_string(buffer))
 }
@@ -270,7 +274,9 @@ pub fn read(frame: &dyn compiler::value::Frame, argc: usize) -> Result<Value, Va
     frame.check_trust()?;
     let path = frame.nth_file(1)?;
     let mut buffer = String::new();
-    path.borrow_mut().read_to_string(&mut buffer).unwrap();
+    path.borrow_mut()
+        .read_to_string(&mut buffer)
+        .map_err(map_os_err)?;
     Ok(Value::new_string(buffer))
 }
 
@@ -284,7 +290,12 @@ pub fn read_folder(frame: &dyn compiler::value::Frame, argc: usize) -> Result<Va
             let mut res = vec![];
             for entry in dir {
                 res.push(Value::new_string(
-                    entry.unwrap().path().to_str().unwrap().to_string(),
+                    entry
+                        .map_err(map_os_err)?
+                        .path()
+                        .to_str()
+                        .unwrap()
+                        .to_string(),
                 ));
             }
             Ok(Value::new_list(res))
@@ -298,7 +309,9 @@ pub fn write(frame: &dyn compiler::value::Frame, argc: usize) -> Result<Value, V
     frame.check_trust()?;
     let path = frame.nth_file(1)?;
     let content = frame.nth_string(2)?;
-    path.borrow_mut().write_all(content.as_bytes()).unwrap();
+    path.borrow_mut()
+        .write_all(content.as_bytes())
+        .map_err(map_os_err)?;
     Ok(Value::Nil)
 }
 
