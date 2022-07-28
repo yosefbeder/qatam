@@ -39,6 +39,7 @@ pub enum ParseError {
     ExpectedInstead(Vec<TokenType>, Token),
     ExpectedExpr(Token),
     InvalidRhs(Token),
+    ExpectedOptional(Token),
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -73,6 +74,9 @@ impl fmt::Display for ParseError {
             }
             Self::InvalidRhs(token) => {
                 write!(f, "الجانب الأيمن لعلامة التساوي غير صحيح\n{token}")
+            }
+            Self::ExpectedOptional(token) => {
+                write!(f, "لا يمكن وضع مدخل إجباري بعد مدخل إختياري\n{token}")
             }
         }
     }
@@ -288,7 +292,9 @@ impl Parser {
         let body = self.block()?;
         Ok(Expr::Literal(Literal::Lambda(
             Rc::new(token),
-            params,
+            params.0,
+            params.1,
+            params.2,
             Box::new(body),
         )))
     }
@@ -481,57 +487,87 @@ impl Parser {
         Ok(Stml::Throw(Rc::new(token), Some(self.parse_expr()?)))
     }
 
-    fn optional_param(&mut self) -> Result<(Expr, Option<Expr>), ()> {
+    /// parses a required or optional param
+    /// if nothing is returned, this implies that it either found "..." or `closing_token`
+    fn param(&mut self, closing_token: TokenType) -> Result<Option<(Expr, Option<Expr>)>, ()> {
+        if self.check(TokenType::TPeriod) || self.check(closing_token) {
+            return Ok(None);
+        }
         let definable = self.definable()?;
-        self.consume(TokenType::Equal)?;
-        let default = Some(self.parse_expr()?);
-        Ok((definable, default))
+        if self.check_consume(TokenType::Equal) {
+            Ok(Some((definable, Some(self.parse_expr()?))))
+        } else {
+            Ok(Some((definable, None)))
+        }
     }
 
-    fn param(&mut self) -> Result<(Expr, Option<Expr>), ()> {
-        let definable = self.definable()?;
-        let default = if self.check_consume(TokenType::Equal) {
-            Some(self.parse_expr()?)
+    fn variadic_param(&mut self) -> Result<(Rc<Token>, Box<Expr>), ()> {
+        let t_period = self.clone_previous();
+        self.consume(TokenType::Identifier)?;
+        Ok((
+            Rc::new(t_period),
+            Box::new(Expr::Variable(Rc::new(self.clone_previous()))),
+        ))
+    }
+
+    fn params(
+        &mut self,
+        closing_token: TokenType,
+    ) -> Result<(Vec<Expr>, Vec<(Expr, Expr)>, Option<(Rc<Token>, Box<Expr>)>), ()> {
+        let mut required = vec![];
+        let mut optional = vec![];
+
+        macro_rules! optional {
+            ($definable:ident, $default:ident) => {{
+                optional.push(($definable, $default));
+                while self.check_consume(TokenType::Comma) {
+                    match self.param(closing_token)? {
+                        Some((definable, None)) => self
+                            .parse_err(ParseError::ExpectedOptional((*definable.token()).clone())),
+                        Some((definable, Some(default))) => {
+                            optional.push((definable, default));
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+            }};
+        }
+
+        match self.param(closing_token)? {
+            Some((definable, None)) => {
+                required.push(definable);
+                while self.check_consume(TokenType::Comma) {
+                    match self.param(closing_token)? {
+                        Some((definable, None)) => {
+                            required.push(definable);
+                        }
+                        Some((definable, Some(default))) => {
+                            optional!(definable, default);
+                            break;
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+            }
+            Some((definable, Some(default))) => {
+                optional!(definable, default)
+            }
+            None => {}
+        }
+
+        let variadic = if self.check_consume(TokenType::TPeriod) {
+            let tmp = self.variadic_param()?;
+            self.check_consume(TokenType::Comma);
+            Some(tmp)
         } else {
             None
         };
-        Ok((definable, default))
-    }
-
-    fn params(&mut self, closing_token: TokenType) -> Result<Vec<(Expr, Option<Expr>)>, ()> {
-        if self.check_consume(closing_token) {
-            return Ok(vec![]);
-        }
-        let first = self.param()?;
-
-        let mut items = if first.1.is_some() {
-            vec![first]
-        } else {
-            // 1. Parse the required part
-            let mut tmp = vec![first];
-            while self.check_consume(TokenType::Comma) {
-                if self.check_consume(closing_token) {
-                    return Ok(tmp);
-                }
-                let param = self.param()?;
-                let is_optional = param.1.is_some();
-                tmp.push(param);
-                if is_optional {
-                    break;
-                }
-            }
-            tmp
-        };
-
-        // 2. Parse the optional part
-        while self.check_consume(TokenType::Comma) {
-            if self.check_consume(closing_token) {
-                return Ok(items);
-            }
-            items.push(self.optional_param()?);
-        }
         self.consume(closing_token)?;
-        Ok(items)
+        Ok((required, optional, variadic))
     }
 
     fn function_decl(&mut self) -> Result<Stml, ()> {
@@ -545,7 +581,9 @@ impl Parser {
         Ok(Stml::FunctionDecl(
             Rc::new(token),
             Rc::new(name),
-            params,
+            params.0,
+            params.1,
+            params.2,
             Box::new(body),
         ))
     }

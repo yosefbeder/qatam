@@ -629,7 +629,9 @@ impl<'a> Compiler<'a> {
                 self.chunk.write_instr(BuildObject, Rc::clone(token));
                 self.chunk.write_byte(size);
             }
-            Literal::Lambda(token, params, body) => self.lambda(Rc::clone(token), params, body)?,
+            Literal::Lambda(token, required, optional, variadic, body) => {
+                self.lambda(Rc::clone(token), required, optional, variadic, body)?
+            }
         };
         Ok(())
     }
@@ -761,7 +763,7 @@ impl<'a> Compiler<'a> {
         self.expr(callee)?;
         let mut count = 0;
         for arg in args {
-            if count == 0xff {
+            if count == 255 {
                 self.err(CompileError::TooManyArgs(arg.token()));
                 return Err(());
             }
@@ -776,7 +778,9 @@ impl<'a> Compiler<'a> {
     fn lambda(
         &mut self,
         token: Rc<Token>,
-        params: &Vec<(Expr, Option<Expr>)>,
+        required: &Vec<Expr>,
+        optional: &Vec<(Expr, Expr)>,
+        variadic: &Option<(Rc<Token>, Box<Expr>)>,
         body: &Box<Stml>,
     ) -> Result<(), ()> {
         let mut compiler = Compiler::new_function(
@@ -787,7 +791,7 @@ impl<'a> Compiler<'a> {
             self.path.clone(),
         );
         compiler.define_variable(Rc::new(Token::default()))?;
-        compiler.define_params(params, Rc::clone(&token))?;
+        compiler.define_params(required, optional, variadic, Rc::clone(&token))?;
         let function = compiler.compile().map_err(|errors| {
             for err in errors {
                 self.err(err)
@@ -811,35 +815,60 @@ impl<'a> Compiler<'a> {
 
     fn define_params(
         &mut self,
-        params: &Vec<(Expr, Option<Expr>)>,
+        required: &Vec<Expr>,
+        optional: &Vec<(Expr, Expr)>,
+        variadic: &Option<(Rc<Token>, Box<Expr>)>,
         token: Rc<Token>,
     ) -> Result<(), ()> {
-        // 1. Default values
-        for param in params {
-            if param.1.is_none() {
-                continue;
-            }
+        let mut count = 0;
+        macro_rules! check_count {
+            ($definable:ident) => {
+                if count == 255 {
+                    self.err(CompileError::TooManyArgs($definable.token()));
+                    return Err(());
+                }
+            };
+        }
+        for definable in required {
+            check_count!(definable);
+            count += 1;
+        }
+        for (_, definable) in optional {
+            check_count!(definable);
+            count += 1;
+        }
+        if let Some((_, definable)) = variadic {
+            count += 1;
+            check_count!(definable);
+        }
+
+        for (_, default) in optional {
             self.defaults.push(self.ip());
-            self.expr(param.1.as_ref().unwrap())?;
+            self.expr(default)?;
         }
         self.start_ip = self.ip();
-        // 2. Defining
-        let mut required = 0;
-        let mut optional = 0;
-        for param in params.iter().rev() {
-            if required + optional == 0xff {
-                self.err(CompileError::TooManyParams(param.0.token()));
-                return Err(());
-            }
-            self.definable(&param.0, false)?;
-            if param.1.is_some() {
-                optional += 1;
-            } else {
-                required += 1;
-            }
+
+        if let Some((t_period, definable)) = variadic {
+            self.chunk.write_instr(BuildVariadic, Rc::clone(t_period));
+            self.chunk
+                .write_byte((required.len() + optional.len()) as u8);
+            self.definable(definable, false)?;
         }
+
+        // Assuming that the stack is complete
+        for (definable, _) in optional.iter().rev() {
+            self.definable(definable, false)?;
+        }
+        for definable in required.iter().rev() {
+            self.definable(definable, false)?;
+        }
+
         self.chunk.write_instr(FlushTmps, token);
-        self.arity = Arity::new(Fixed, required, optional);
+        self.arity = Arity::new(
+            if variadic.is_some() { Variadic } else { Fixed },
+            required.len(),
+            optional.len(),
+        );
         Ok(())
     }
 
@@ -847,7 +876,9 @@ impl<'a> Compiler<'a> {
         &mut self,
         token: Rc<Token>,
         name: Rc<Token>,
-        params: &Vec<(Expr, Option<Expr>)>,
+        required: &Vec<Expr>,
+        optional: &Vec<(Expr, Expr)>,
+        variadic: &Option<(Rc<Token>, Box<Expr>)>,
         body: &Stml,
     ) -> Result<(), ()> {
         let mut compiler = Compiler::new_function(
@@ -858,7 +889,9 @@ impl<'a> Compiler<'a> {
             self.path.clone(),
         );
         compiler.define_variable(Rc::clone(&name)).ok();
-        compiler.define_params(params, Rc::clone(&name)).ok();
+        compiler
+            .define_params(required, optional, variadic, Rc::clone(&name))
+            .ok();
         let function = compiler.compile().map_err(|errors| {
             for err in errors {
                 self.err(err)
@@ -1242,9 +1275,15 @@ impl<'a> Compiler<'a> {
         }
 
         match stml {
-            Stml::FunctionDecl(token, name, params, body) => {
-                self.function_decl(Rc::clone(token), Rc::clone(name), params, body)?
-            }
+            Stml::FunctionDecl(token, name, required, optional, variadic, body) => self
+                .function_decl(
+                    Rc::clone(token),
+                    Rc::clone(name),
+                    required,
+                    optional,
+                    variadic,
+                    body,
+                )?,
             Stml::VarDecl(token, decls) => self.var_decl(Rc::clone(token), decls)?,
             _ => unreachable!(),
         };
@@ -1352,9 +1391,15 @@ impl<'a> Compiler<'a> {
                 self.expr(expr)?;
                 self.chunk.write_instr(Pop, expr.token());
             }
-            Stml::FunctionDecl(token, name, params, body) => {
-                self.function_decl(Rc::clone(token), Rc::clone(name), params, body)?
-            }
+            Stml::FunctionDecl(token, name, required, optional, variadic, body) => self
+                .function_decl(
+                    Rc::clone(token),
+                    Rc::clone(name),
+                    required,
+                    optional,
+                    variadic,
+                    body,
+                )?,
             Stml::VarDecl(token, decls) => {
                 self.var_decl(Rc::clone(token), decls)?;
             }

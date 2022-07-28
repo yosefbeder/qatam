@@ -172,7 +172,15 @@ impl Lexer {
                 '}' => self.pop_token(TokenType::CBrace),
                 '[' => self.pop_token(TokenType::OBracket),
                 ']' => self.pop_token(TokenType::CBracket),
-                '.' => self.pop_token(TokenType::Period),
+                '.' => {
+                    if self.peek(0) == Some('.') && self.peek(1) == Some('.') {
+                        self.next();
+                        self.next();
+                        self.pop_token(TokenType::TPeriod)
+                    } else {
+                        self.pop_token(TokenType::Period)
+                    }
+                }
                 '+' => {
                     if self.check('=') {
                         self.next();

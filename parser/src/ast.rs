@@ -12,7 +12,13 @@ pub enum Literal {
         Rc<Token>,
         Vec<(Rc<Token>, Option<Expr>, Option<(Rc<Token>, Expr)>)>,
     ),
-    Lambda(Rc<Token>, Vec<(Expr, Option<Expr>)>, Box<Stml>),
+    Lambda(
+        Rc<Token>,
+        Vec<Expr>,
+        Vec<(Expr, Expr)>,
+        Option<(Rc<Token>, Box<Expr>)>,
+        Box<Stml>,
+    ),
 }
 
 #[derive(Debug, Clone)]
@@ -33,13 +39,13 @@ impl Expr {
             | Self::Literal(Literal::String(token))
             | Self::Literal(Literal::Bool(token))
             | Self::Literal(Literal::Nil(token))
-            | Self::Literal(Literal::List(token, _))
-            | Self::Literal(Literal::Object(token, _))
-            | Self::Literal(Literal::Lambda(token, _, _)) => Rc::clone(token),
-            Self::Unary(oper, _)
-            | Self::Binary(oper, _, _)
-            | Self::Call(oper, _, _)
-            | Self::Member(oper, _, _) => Rc::clone(oper),
+            | Self::Literal(Literal::List(token, ..))
+            | Self::Literal(Literal::Object(token, ..))
+            | Self::Literal(Literal::Lambda(token, ..)) => Rc::clone(token),
+            Self::Unary(oper, ..)
+            | Self::Binary(oper, ..)
+            | Self::Call(oper, ..)
+            | Self::Member(oper, ..) => Rc::clone(oper),
         }
     }
 }
@@ -47,7 +53,14 @@ impl Expr {
 #[derive(Debug, Clone)]
 pub enum Stml {
     Block(Rc<Token>, Vec<Stml>),
-    FunctionDecl(Rc<Token>, Rc<Token>, Vec<(Expr, Option<Expr>)>, Box<Stml>),
+    FunctionDecl(
+        Rc<Token>,
+        Rc<Token>,
+        Vec<Expr>,
+        Vec<(Expr, Expr)>,
+        Option<(Rc<Token>, Box<Expr>)>,
+        Box<Stml>,
+    ),
     VarDecl(Rc<Token>, Vec<(Expr, Option<Expr>)>),
     Return(Rc<Token>, Option<Expr>),
     Throw(Rc<Token>, Option<Expr>),
@@ -72,20 +85,20 @@ pub enum Stml {
 impl Stml {
     pub fn token(&self) -> Rc<Token> {
         match self {
-            Self::Block(token, _)
-            | Self::FunctionDecl(token, _, _, _)
-            | Self::VarDecl(token, _)
-            | Self::Return(token, _)
-            | Self::Throw(token, _)
-            | Self::TryCatch(token, _, _, _)
-            | Self::IfElse(token, _, _, _, _)
-            | Self::While(token, _, _)
-            | Self::Loop(token, _)
+            Self::Block(token, ..)
+            | Self::FunctionDecl(token, ..)
+            | Self::VarDecl(token, ..)
+            | Self::Return(token, ..)
+            | Self::Throw(token, ..)
+            | Self::TryCatch(token, ..)
+            | Self::IfElse(token, ..)
+            | Self::While(token, ..)
+            | Self::Loop(token, ..)
             | Self::Break(token)
             | Self::Continue(token)
-            | Self::Import(token, _, _)
-            | Self::Export(token, _)
-            | Self::ForIn(token, _, _, _) => Rc::clone(token),
+            | Self::Import(token, ..)
+            | Self::Export(token, ..)
+            | Self::ForIn(token, ..) => Rc::clone(token),
             Self::Expr(expr) => expr.token(),
         }
     }

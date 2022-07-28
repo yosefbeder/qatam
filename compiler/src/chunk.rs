@@ -61,6 +61,7 @@ pub enum Instruction {
     PushTmp,
     FlushTmps,
     CloneTop,
+    BuildVariadic,
     Unknown,
 }
 
@@ -112,7 +113,8 @@ impl Into<u8> for Instruction {
             PushTmp => 40,
             FlushTmps => 41,
             CloneTop => 42,
-            Unknown => 43,
+            BuildVariadic => 43,
+            Unknown => 44,
         }
     }
 }
@@ -163,6 +165,7 @@ impl From<u8> for Instruction {
             40 => PushTmp,
             41 => FlushTmps,
             42 => CloneTop,
+            43 => BuildVariadic,
             _ => Unknown,
         }
     }
@@ -214,6 +217,7 @@ impl fmt::Debug for Instruction {
             PushTmp => "PUSH_TMP",
             FlushTmps => "FLUSH_TMPS",
             CloneTop => "CLONE_TOP",
+            BuildVariadic => "BUILD_VARIADIC",
             Unknown => "UNKNOWN",
         };
 
@@ -303,7 +307,7 @@ impl Chunk {
                 return (buffer, 3);
             }
             Call | GetLocal | SetLocal | GetUpValue | SetUpValue | BuildList | BuildObject
-            | UnpackList => {
+            | UnpackList | BuildVariadic => {
                 let oper = self.bytes[offset + 1] as usize;
                 buffer += format!("{}\n", oper).as_str();
                 return (buffer, 2);

@@ -843,12 +843,25 @@ impl<'a, 'b> Frame<'a, 'b> {
                                 Err(err) => err!(err.as_string()),
                             };
                             let n_optionals = argc - arity.required;
-                            let ip = if n_optionals == arity.optional {
-                                closure.get_start_ip()
-                            } else if n_optionals > 0 {
-                                closure.get_defaults()[n_optionals]
-                            } else {
-                                0
+                            let ip = match arity.typ {
+                                Fixed => {
+                                    if n_optionals == arity.optional {
+                                        closure.get_start_ip()
+                                    } else if n_optionals > 0 {
+                                        closure.get_defaults()[n_optionals]
+                                    } else {
+                                        0
+                                    }
+                                }
+                                Variadic => {
+                                    if n_optionals > 0 && n_optionals <= arity.optional {
+                                        closure.get_defaults()[n_optionals]
+                                    } else if n_optionals > 0 {
+                                        closure.get_start_ip()
+                                    } else {
+                                        0
+                                    }
+                                }
                             };
                             Frame::new_closure(
                                 self.state_mut(),
@@ -1007,6 +1020,13 @@ impl<'a, 'b> Frame<'a, 'b> {
                     self.state_mut().stack.append(&mut tmps)
                 }
                 CloneTop => self.push(self.last().clone()),
+                BuildVariadic => {
+                    let arity = self.read_byte();
+                    let slots = self.slots();
+                    let variadic = self.state_mut().stack.drain(slots + arity + 1..).collect();
+                    self.push(Value::new_list(variadic));
+                    progress = 2;
+                }
                 Unknown => unreachable!(),
             }
             end!(progress)
