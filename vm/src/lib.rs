@@ -23,7 +23,7 @@ impl BacktraceFrame {
     fn new(frame: &Frame) -> Self {
         Self {
             token: frame.cur_token(),
-            name: frame.get_closure().get_name().clone(),
+            name: frame.closure().get_name().clone(),
         }
     }
 }
@@ -208,7 +208,7 @@ pub enum Frame<'a, 'b> {
 
 impl<'a, 'b> compiler::value::Frame for Frame<'a, 'b> {
     fn check_trust(&self) -> Result<(), Value> {
-        if self.get_state().untrusted {
+        if self.state().untrusted {
             Err(Value::new_string(
                 "لا يمكن تشغيل هذه الدالة على وضع عدم الثقة".to_string(),
             ))
@@ -218,7 +218,7 @@ impl<'a, 'b> compiler::value::Frame for Frame<'a, 'b> {
     }
 
     fn nth(&self, idx: usize) -> &Value {
-        self.get(self.get_slots() + idx)
+        self.get(self.slots() + idx)
     }
 
     fn nth_f64(&self, idx: usize) -> Result<f64, Value> {
@@ -303,7 +303,7 @@ impl<'a, 'b> compiler::value::Frame for Frame<'a, 'b> {
     }
 
     fn get_creation_time(&self) -> &SystemTime {
-        &self.get_state().created_at
+        &self.state().created_at
     }
 }
 
@@ -340,14 +340,14 @@ impl<'a, 'b> Frame<'a, 'b> {
         }
     }
 
-    fn get_closure(&self) -> &Rc<Closure> {
+    fn closure(&self) -> &Rc<Closure> {
         match self {
             Self::Closure { closure, .. } => closure,
             Self::Native { .. } => unreachable!(),
         }
     }
 
-    fn get_ip(&self) -> usize {
+    fn ip(&self) -> usize {
         match self {
             Self::Closure { ip, .. } => *ip,
             Self::Native { .. } => unreachable!(),
@@ -361,7 +361,7 @@ impl<'a, 'b> Frame<'a, 'b> {
         }
     }
 
-    fn get_enclosing_up_values(&self) -> &Option<&Vec<Rc<RefCell<UpValue>>>> {
+    fn enclosing_up_values(&self) -> &Option<&Vec<Rc<RefCell<UpValue>>>> {
         match self {
             Self::Closure {
                 enclosing_up_values,
@@ -371,35 +371,35 @@ impl<'a, 'b> Frame<'a, 'b> {
         }
     }
 
-    fn get_handlers_mut(&mut self) -> &mut Vec<Handler> {
+    fn handlers_mut(&mut self) -> &mut Vec<Handler> {
         match self {
             Self::Closure { handlers, .. } => handlers,
             Self::Native { .. } => unreachable!(),
         }
     }
 
-    fn get_state_mut(&mut self) -> &mut Vm {
+    fn state_mut(&mut self) -> &mut Vm {
         match self {
             Self::Closure { state, .. } => state,
             Self::Native { state, .. } => state,
         }
     }
 
-    fn get_state(&self) -> &Vm {
+    fn state(&self) -> &Vm {
         match self {
             Self::Closure { state, .. } => state,
             Self::Native { state, .. } => state,
         }
     }
 
-    fn get_native(&self) -> Native {
+    fn native(&self) -> Native {
         match self {
             Self::Closure { .. } => unreachable!(),
             Self::Native { native, .. } => native.clone(),
         }
     }
 
-    fn get_slots(&self) -> usize {
+    fn slots(&self) -> usize {
         match self {
             Self::Closure { slots, .. } => *slots,
             Self::Native { slots, .. } => *slots,
@@ -408,9 +408,9 @@ impl<'a, 'b> Frame<'a, 'b> {
 
     /// offset gets added to the current ip
     fn read_byte_at(&self, offset: usize) -> usize {
-        self.get_closure()
+        self.closure()
             .get_chunk()
-            .get_byte(self.get_ip() + offset)
+            .get_byte(self.ip() + offset)
             .unwrap() as usize
     }
 
@@ -420,26 +420,20 @@ impl<'a, 'b> Frame<'a, 'b> {
 
     fn read_up_value(&self, offset: usize) -> (bool, usize) {
         (
-            self.get_closure().get_chunk().get_byte(offset).unwrap() != 0,
-            self.get_closure().get_chunk().get_byte(offset + 1).unwrap() as usize,
+            self.closure().get_chunk().get_byte(offset).unwrap() != 0,
+            self.closure().get_chunk().get_byte(offset + 1).unwrap() as usize,
         )
     }
 
     fn read_2bytes(&self) -> usize {
         combine(
-            self.get_closure()
-                .get_chunk()
-                .get_byte(self.get_ip() + 1)
-                .unwrap(),
-            self.get_closure()
-                .get_chunk()
-                .get_byte(self.get_ip() + 2)
-                .unwrap(),
+            self.closure().get_chunk().get_byte(self.ip() + 1).unwrap(),
+            self.closure().get_chunk().get_byte(self.ip() + 2).unwrap(),
         ) as usize
     }
 
     fn cur_byte(&self) -> Option<u8> {
-        self.get_closure().get_chunk().get_byte(self.get_ip())
+        self.closure().get_chunk().get_byte(self.ip())
     }
 
     fn cur_instr(&self) -> Option<Instruction> {
@@ -447,32 +441,32 @@ impl<'a, 'b> Frame<'a, 'b> {
     }
 
     fn cur_token(&self) -> Rc<Token> {
-        self.get_closure().get_chunk().get_token(self.get_ip())
+        self.closure().get_chunk().get_token(self.ip())
     }
 
     fn pop(&mut self) -> Value {
-        self.get_state_mut().stack.pop().unwrap()
+        self.state_mut().stack.pop().unwrap()
     }
 
     fn push(&mut self, value: Value) {
-        self.get_state_mut().stack.push(value);
+        self.state_mut().stack.push(value);
     }
 
     fn last(&self) -> &Value {
-        self.get_state().stack.last().unwrap()
+        self.state().stack.last().unwrap()
     }
 
     fn get(&self, idx: usize) -> &Value {
-        &self.get_state().stack[idx]
+        &self.state().stack[idx]
     }
 
     fn get_mut(&mut self, idx: usize) -> &mut Value {
-        &mut self.get_state_mut().stack[idx]
+        &mut self.state_mut().stack[idx]
     }
 
     fn truncate(&mut self, len: usize) {
-        self.get_state_mut().close_up_values(len);
-        self.get_state_mut().stack.truncate(len);
+        self.state_mut().close_up_values(len);
+        self.state_mut().stack.truncate(len);
     }
 
     fn check_arity(arity: Arity, argc: usize) -> Result<(), Value> {
@@ -494,11 +488,11 @@ impl<'a, 'b> Frame<'a, 'b> {
 
     fn string_to_err(&mut self, string: String) -> Result<i32, RuntimeError> {
         let value = Value::new_string(string);
-        match self.get_handlers_mut().pop() {
+        match self.handlers_mut().pop() {
             Some(Handler { slots, ip }) => {
                 self.truncate(slots);
                 self.push(value);
-                Ok((ip - self.get_ip()) as i32)
+                Ok((ip - self.ip()) as i32)
             }
             None => {
                 let mut err = RuntimeError::new(value);
@@ -511,9 +505,9 @@ impl<'a, 'b> Frame<'a, 'b> {
     fn run(&mut self, argc: usize) -> Result<Option<Value>, RuntimeError> {
         macro_rules! end {
             ($progress:expr) => {{
-                self.set_ip((self.get_ip() as i32 + ($progress)) as usize);
+                self.set_ip((self.ip() as i32 + ($progress)) as usize);
                 if cfg!(feature = "verbose") {
-                    println!("{:#?}", self.get_state().stack);
+                    println!("{:#?}", self.state().stack);
                 }
             }};
         }
@@ -526,8 +520,7 @@ impl<'a, 'b> Frame<'a, 'b> {
         }
 
         if self.is_native() {
-            let returned =
-                self.get_native()(self, argc).map_err(|value| RuntimeError::new(value))?;
+            let returned = self.native()(self, argc).map_err(|value| RuntimeError::new(value))?;
             return Ok(Some(returned));
         }
 
@@ -549,9 +542,9 @@ impl<'a, 'b> Frame<'a, 'b> {
             if cfg!(feature = "verbose") {
                 print!(
                     "{}",
-                    self.get_closure()
+                    self.closure()
                         .get_chunk()
-                        .disassemble_instr_at(self.get_ip(), false)
+                        .disassemble_instr_at(self.ip(), false)
                         .0
                 );
             }
@@ -564,12 +557,12 @@ impl<'a, 'b> Frame<'a, 'b> {
                 }
                 Constant8 => {
                     let idx = self.read_byte();
-                    self.push(self.get_closure().get_chunk().get_constant(idx));
+                    self.push(self.closure().get_chunk().get_constant(idx));
                     progress = 2;
                 }
                 Constant16 => {
                     let idx = self.read_2bytes();
-                    self.push(self.get_closure().get_chunk().get_constant(idx));
+                    self.push(self.closure().get_chunk().get_constant(idx));
                     progress = 3;
                 }
                 Negate => {
@@ -683,41 +676,41 @@ impl<'a, 'b> Frame<'a, 'b> {
                 DefineGlobal => {
                     let name = self.pop().to_string();
                     let value = self.pop();
-                    if self.get_state().globals.contains_key(&name) {
+                    if self.state().globals.contains_key(&name) {
                         err!("يوجد متغير بهذا الاسم".to_string());
                     }
-                    self.get_state_mut().globals.insert(name.clone(), value);
+                    self.state_mut().globals.insert(name.clone(), value);
                 }
                 SetGlobal => {
                     let name = self.pop().to_string();
                     let value = self.last().clone();
-                    if !self.get_state().globals.contains_key(&name) {
+                    if !self.state().globals.contains_key(&name) {
                         err!("لا يوجد متغير بهذا الاسم".to_string());
                     }
-                    self.get_state_mut().globals.insert(name, value);
+                    self.state_mut().globals.insert(name, value);
                 }
                 GetGlobal => {
                     let name = self.pop().to_string();
-                    if !self.get_state().globals.contains_key(&name) {
+                    if !self.state().globals.contains_key(&name) {
                         err!(format!("لا يوجد متغير يسمى {name}"));
                     }
-                    self.push(self.get_state().globals.get(&name).unwrap().clone());
+                    self.push(self.state().globals.get(&name).unwrap().clone());
                 }
                 GetLocal => {
-                    let idx = self.get_slots() + self.read_byte();
+                    let idx = self.slots() + self.read_byte();
                     self.push(self.get(idx).clone());
                     progress = 2;
                 }
                 SetLocal => {
-                    let idx = self.get_slots() + self.read_byte();
+                    let idx = self.slots() + self.read_byte();
                     *self.get_mut(idx) = self.last().clone();
                     progress = 2;
                 }
                 BuildList => {
                     let size = self.read_byte();
                     let mut items = vec![];
-                    let len = self.get_state().stack.len();
-                    for item in self.get_state_mut().stack.drain(len - size..) {
+                    let len = self.state().stack.len();
+                    for item in self.state_mut().stack.drain(len - size..) {
                         items.push(item);
                     }
                     self.push(Value::new_list(items));
@@ -814,7 +807,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     let up_values = {
                         let mut data = Vec::with_capacity(count);
                         for idx in 0..count {
-                            let offset = self.get_ip() + 2 + idx * 2;
+                            let offset = self.ip() + 2 + idx * 2;
                             data.push(self.read_up_value(offset))
                         }
 
@@ -822,14 +815,14 @@ impl<'a, 'b> Frame<'a, 'b> {
 
                         for (is_local, mut idx) in data {
                             if is_local {
-                                idx = self.get_slots() + idx;
-                                if let Some(up_value) = self.get_state().get_up_value(idx) {
+                                idx = self.slots() + idx;
+                                if let Some(up_value) = self.state().get_up_value(idx) {
                                     res.push(up_value);
                                 } else {
-                                    res.push(self.get_state_mut().append_up_value(idx))
+                                    res.push(self.state_mut().append_up_value(idx))
                                 }
                             } else {
-                                res.push(self.get_enclosing_up_values().unwrap()[idx].clone());
+                                res.push(self.enclosing_up_values().unwrap()[idx].clone());
                             }
                         }
 
@@ -840,9 +833,9 @@ impl<'a, 'b> Frame<'a, 'b> {
                 }
                 Call => {
                     let argc = self.read_byte();
-                    let idx = self.get_state().stack.len() - argc - 1;
-                    let enclosing_closure = self.get_closure().clone();
-                    let mut frame = match self.get_state().stack[idx].clone() {
+                    let idx = self.state().stack.len() - argc - 1;
+                    let enclosing_closure = self.closure().clone();
+                    let mut frame = match self.state().stack[idx].clone() {
                         Value::Object(Object::Closure(closure)) => {
                             let arity = closure.get_arity();
                             match Self::check_arity(arity.clone(), argc) {
@@ -858,7 +851,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                                 0
                             };
                             Frame::new_closure(
-                                self.get_state_mut(),
+                                self.state_mut(),
                                 closure,
                                 ip,
                                 idx,
@@ -866,7 +859,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                             )
                         }
                         Value::Object(Object::Native(native)) => {
-                            Frame::new_native(self.get_state_mut(), native, idx)
+                            Frame::new_native(self.state_mut(), native, idx)
                         }
                         _ => err!("يمكن فقط استدعاء الدوال".to_string()),
                     };
@@ -876,11 +869,11 @@ impl<'a, 'b> Frame<'a, 'b> {
                             self.truncate(idx);
                             self.push(returned.unwrap());
                         }
-                        Err(mut err) => match self.get_handlers_mut().pop() {
+                        Err(mut err) => match self.handlers_mut().pop() {
                             Some(Handler { slots, ip }) => {
                                 self.truncate(slots);
                                 self.push(err.value);
-                                progress = (ip - self.get_ip()) as i32;
+                                progress = (ip - self.ip()) as i32;
                             }
                             None => {
                                 err.push_frame(self);
@@ -891,7 +884,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                 }
                 GetUpValue => {
                     let idx = self.read_byte();
-                    let up_value = self.get_closure().get_up_value(idx);
+                    let up_value = self.closure().get_up_value(idx);
                     self.push(match &*up_value.borrow() {
                         UpValue::Open(idx) => self.get(*idx).clone(),
                         UpValue::Closed(up_value) => up_value.clone(),
@@ -900,7 +893,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                 }
                 SetUpValue => {
                     let idx = self.read_byte();
-                    let up_value = self.get_closure().get_up_value(idx);
+                    let up_value = self.closure().get_up_value(idx);
                     if up_value.borrow().is_open() {
                         *self.get_mut(up_value.borrow().as_open()) = self.last().clone();
                     } else {
@@ -909,28 +902,26 @@ impl<'a, 'b> Frame<'a, 'b> {
                     progress = 2;
                 }
                 CloseUpValue => {
-                    let idx = self.get_state().stack.len() - 1;
-                    self.get_state_mut().close_up_values(idx);
+                    let idx = self.state().stack.len() - 1;
+                    self.state_mut().close_up_values(idx);
                     self.pop();
                 }
                 Return => return Ok(Some(self.pop())),
                 AppendHandler => {
-                    let handler = Handler::new(
-                        self.get_state().stack.len(),
-                        self.get_ip() + self.read_byte(),
-                    );
-                    self.get_handlers_mut().push(handler);
+                    let handler =
+                        Handler::new(self.state().stack.len(), self.ip() + self.read_byte());
+                    self.handlers_mut().push(handler);
                     progress = 3;
                 }
                 PopHandler => {
-                    self.get_handlers_mut().pop();
+                    self.handlers_mut().pop();
                 }
-                Throw => match self.get_handlers_mut().pop() {
+                Throw => match self.handlers_mut().pop() {
                     Some(Handler { slots, ip }) => {
                         let throwed = self.pop();
                         self.truncate(slots);
                         self.push(throwed);
-                        progress = (ip - self.get_ip()) as i32;
+                        progress = (ip - self.ip()) as i32;
                     }
                     None => {
                         let mut err = RuntimeError::new(self.pop());
@@ -1008,12 +999,12 @@ impl<'a, 'b> Frame<'a, 'b> {
                 }
                 PushTmp => {
                     let popped = self.pop();
-                    self.get_state_mut().tmps.push(popped)
+                    self.state_mut().tmps.push(popped)
                 }
                 FlushTmps => {
                     let mut tmps = vec![];
-                    tmps.append(&mut self.get_state_mut().tmps);
-                    self.get_state_mut().stack.append(&mut tmps)
+                    tmps.append(&mut self.state_mut().tmps);
+                    self.state_mut().stack.append(&mut tmps)
                 }
                 CloneTop => self.push(self.last().clone()),
                 Unknown => unreachable!(),
