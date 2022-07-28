@@ -312,6 +312,8 @@ pub struct Compiler<'a> {
     defaults: Vec<usize>,
     start_ip: usize,
     ast: &'a Vec<Stml>,
+    /// used to emit the last part of the chunk
+    token: Rc<Token>,
     chunk: Chunk,
     state: Rc<RefCell<CompilerState>>,
     path: Option<PathBuf>,
@@ -319,7 +321,7 @@ pub struct Compiler<'a> {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new(ast: &'a Vec<Stml>, path: Option<PathBuf>) -> Self {
+    pub fn new(ast: &'a Vec<Stml>, token: Rc<Token>, path: Option<PathBuf>) -> Self {
         let mut state = CompilerState::new(None);
 
         state.locals.push(Local::new(Rc::new(Token::default()), 0));
@@ -331,6 +333,7 @@ impl<'a> Compiler<'a> {
             defaults: vec![],
             start_ip: 0,
             ast,
+            token,
             chunk: Chunk::new(),
             state: Rc::new(RefCell::new(state)),
             path,
@@ -338,7 +341,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn new_module(ast: &'a Vec<Stml>, path: PathBuf) -> Self {
+    fn new_module(ast: &'a Vec<Stml>, token: Rc<Token>, path: PathBuf) -> Self {
         let mut state = CompilerState::new(None);
 
         state.locals.push(Local::new(Rc::new(Token::default()), 0));
@@ -350,6 +353,7 @@ impl<'a> Compiler<'a> {
             defaults: vec![],
             start_ip: 0,
             ast,
+            token,
             chunk: Chunk::new(),
             state: Rc::new(RefCell::new(state)),
             path: Some(path),
@@ -360,6 +364,7 @@ impl<'a> Compiler<'a> {
     fn new_function(
         name: Option<String>,
         body: &'a Stml,
+        token: Rc<Token>,
         enclosing_state: Rc<RefCell<CompilerState>>,
         path: Option<PathBuf>,
     ) -> Self {
@@ -370,9 +375,10 @@ impl<'a> Compiler<'a> {
             defaults: vec![],
             start_ip: 0,
             ast: match body {
-                Stml::Block(stmls) => stmls,
+                Stml::Block(_, stmls) => stmls,
                 _ => unreachable!(),
             },
+            token,
             chunk: Chunk::new(),
             state: Rc::new(RefCell::new(CompilerState::new(Some(enclosing_state)))),
             path,
@@ -385,7 +391,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn write_const(&mut self, value: Value, token: Rc<Token>) -> Result<(), ()> {
-        match self.chunk.write_const(value, Some(Rc::clone(&token))) {
+        match self.chunk.write_const(value, Rc::clone(&token)) {
             Ok(_) => Ok(()),
             Err(_) => Err(self.err(CompileError::TooManyConsts(token))),
         }
@@ -399,7 +405,7 @@ impl<'a> Compiler<'a> {
     ) -> Result<(), ()> {
         match self
             .chunk
-            .write_closure(function, up_values, Some(Rc::clone(&token)))
+            .write_closure(function, up_values, Rc::clone(&token))
         {
             Ok(_) => Ok(()),
             Err(_) => Err(self.err(CompileError::TooManyConsts(token))),
@@ -444,6 +450,7 @@ impl<'a> Compiler<'a> {
         Ok(content)
     }
 
+    /// use this function only where `token`s are expected to be strings even if they're identifiers, e.g., member expressions
     fn string(&mut self, token: Rc<Token>) -> Result<String, ()> {
         if token.lexeme.starts_with('"') {
             self.quoted_string(token)
@@ -467,7 +474,7 @@ impl<'a> Compiler<'a> {
 
     fn define_global(&mut self, token: Rc<Token>) -> Result<(), ()> {
         self.write_const(Value::new_string(token.lexeme.clone()), Rc::clone(&token))?;
-        self.chunk.write_instr(DefineGlobal, Some(token));
+        self.chunk.write_instr(DefineGlobal, token);
         Ok(())
     }
 
@@ -500,14 +507,14 @@ impl<'a> Compiler<'a> {
 
     fn set_global(&mut self, token: Rc<Token>) -> Result<(), ()> {
         self.write_const(Value::new_string(token.lexeme.clone()), Rc::clone(&token))?;
-        self.chunk.write_instr(SetGlobal, Some(Rc::clone(&token)));
+        self.chunk.write_instr(SetGlobal, token);
         return Ok(());
     }
 
     fn set_local(&mut self, token: Rc<Token>) -> Result<(), ()> {
         let idx = self.state.borrow().resolve_local(Rc::clone(&token));
         if let Some(idx) = idx {
-            self.chunk.write_instr(SetLocal, Some(Rc::clone(&token)));
+            self.chunk.write_instr(SetLocal, token);
             self.chunk.write_byte(idx as u8);
             Ok(())
         } else {
@@ -518,7 +525,7 @@ impl<'a> Compiler<'a> {
     fn set_upvalue(&mut self, token: Rc<Token>) -> Result<(), ()> {
         let idx = self.state.borrow_mut().resolve_up_value(Rc::clone(&token));
         if let Some(idx) = idx {
-            self.chunk.write_instr(SetUpValue, Some(Rc::clone(&token)));
+            self.chunk.write_instr(SetUpValue, token);
             self.chunk.write_byte(idx as u8);
             Ok(())
         } else {
@@ -539,31 +546,26 @@ impl<'a> Compiler<'a> {
         self.set_global(token)
     }
 
+    fn resolve_local(&self, token: Rc<Token>) -> Option<usize> {
+        self.state.borrow().resolve_local(Rc::clone(&token))
+    }
+
+    fn resolve_up_value(&self, token: Rc<Token>) -> Option<usize> {
+        self.state.borrow_mut().resolve_up_value(Rc::clone(&token))
+    }
+
     fn get_variable(&mut self, token: Rc<Token>) -> Result<(), ()> {
-        let state = self.state.borrow();
-        match state.resolve_local(Rc::clone(&token)) {
-            Some(idx) => {
-                self.chunk.write_instr(GetLocal, Some(Rc::clone(&token)));
-                self.chunk.write_byte(idx as u8);
-                return Ok(());
-            }
-            _ => {}
+        if let Some(idx) = self.resolve_local(Rc::clone(&token)) {
+            self.chunk.write_instr(GetLocal, Rc::clone(&token));
+            self.chunk.write_byte(idx as u8);
+        } else if let Some(idx) = self.resolve_up_value(Rc::clone(&token)) {
+            self.chunk.write_instr(GetUpValue, token);
+            self.chunk.write_byte(idx as u8);
+        } else {
+            self.write_const(Value::new_string(token.lexeme.clone()), Rc::clone(&token))?;
+            self.chunk.write_instr(GetGlobal, token);
         }
-        drop(state);
 
-        let mut state = self.state.borrow_mut();
-        match state.resolve_up_value(Rc::clone(&token)) {
-            Some(idx) => {
-                self.chunk.write_instr(GetUpValue, Some(Rc::clone(&token)));
-                self.chunk.write_byte(idx as u8);
-                return Ok(());
-            }
-            _ => {}
-        }
-        drop(state);
-
-        self.write_const(Value::new_string(token.lexeme.clone()), Rc::clone(&token))?;
-        self.chunk.write_instr(GetGlobal, Some(Rc::clone(&token)));
         Ok(())
     }
 
@@ -592,16 +594,16 @@ impl<'a> Compiler<'a> {
             Literal::Nil(token) => {
                 self.write_const(Value::Nil, Rc::clone(token))?;
             }
-            Literal::List(exprs) => {
+            Literal::List(token, exprs) => {
                 let mut size = 0;
                 for expr in exprs {
                     self.expr(expr)?;
                     size += 1;
                 }
-                self.chunk.write_instr(BuildList, None);
+                self.chunk.write_instr(BuildList, Rc::clone(token));
                 self.chunk.write_byte(size);
             }
-            Literal::Object(items) => {
+            Literal::Object(token, items) => {
                 let mut size = 0;
                 for (key, value, default) in items {
                     self.write_const(Value::new_string(key.lexeme.clone()), Rc::clone(key))?;
@@ -624,7 +626,7 @@ impl<'a> Compiler<'a> {
                     }
                     size += 1;
                 }
-                self.chunk.write_instr(BuildObject, None);
+                self.chunk.write_instr(BuildObject, Rc::clone(token));
                 self.chunk.write_byte(size);
             }
             Literal::Lambda(token, params, body) => self.lambda(Rc::clone(token), params, body)?,
@@ -636,10 +638,10 @@ impl<'a> Compiler<'a> {
         self.expr(expr)?;
         match op.typ {
             TokenType::Minus => {
-                self.chunk.write_instr(Negate, Some(Rc::clone(&op)));
+                self.chunk.write_instr(Negate, op);
             }
             TokenType::Bang => {
-                self.chunk.write_instr(Not, Some(Rc::clone(&op)));
+                self.chunk.write_instr(Not, op);
             }
             _ => unreachable!(),
         }
@@ -653,18 +655,18 @@ impl<'a> Compiler<'a> {
                     Expr::Variable(token) => {
                         self.get_variable(token.clone())?;
                         self.expr(rhs)?;
-                        self.chunk.write_instr($instr, Some(op));
+                        self.chunk.write_instr($instr, op);
                         self.set_variable(token.clone())?;
                     }
                     Expr::Member(token, expr, key) => {
                         self.expr(expr)?;
                         self.expr(key)?;
-                        self.chunk.write_instr(Get, Some(Rc::clone(token)));
+                        self.chunk.write_instr(Get, Rc::clone(token));
                         self.expr(rhs)?;
-                        self.chunk.write_instr($instr, Some(op));
+                        self.chunk.write_instr($instr, op);
                         self.expr(expr)?;
                         self.expr(key)?;
-                        self.chunk.write_instr(Set, Some(Rc::clone(token)));
+                        self.chunk.write_instr(Set, Rc::clone(token));
                     }
                     _ => unreachable!(),
                 }
@@ -675,8 +677,8 @@ impl<'a> Compiler<'a> {
         match op.typ {
             TokenType::Equal => {
                 self.expr(rhs)?;
-                self.chunk.write_instr(CloneTop, None);
-                self.settable(lhs, op)?;
+                self.chunk.write_instr(CloneTop, Rc::clone(&op));
+                self.settable(lhs)?;
                 return Ok(());
             }
             TokenType::PlusEqual => set_and!(Add),
@@ -691,15 +693,15 @@ impl<'a> Compiler<'a> {
 
         match op.typ {
             TokenType::And => {
-                let false_jump = self.chunk.write_jump(JumpIfFalse, Some(Rc::clone(&op)));
-                self.chunk.write_instr(Pop, Some(Rc::clone(&op)));
+                let false_jump = self.chunk.write_jump(JumpIfFalse, Rc::clone(&op));
+                self.chunk.write_instr(Pop, Rc::clone(&op));
                 self.expr(rhs)?;
                 self.chunk.rewrite_jump(false_jump);
                 return Ok(());
             }
             TokenType::Or => {
-                let true_jump = self.chunk.write_jump(JumpIfTrue, Some(Rc::clone(&op)));
-                self.chunk.write_instr(Pop, Some(Rc::clone(&op)));
+                let true_jump = self.chunk.write_jump(JumpIfTrue, Rc::clone(&op));
+                self.chunk.write_instr(Pop, Rc::clone(&op));
                 self.expr(rhs)?;
                 self.chunk.rewrite_jump(true_jump);
                 return Ok(());
@@ -710,38 +712,38 @@ impl<'a> Compiler<'a> {
         self.expr(rhs)?;
         match op.typ {
             TokenType::Plus => {
-                self.chunk.write_instr(Add, Some(Rc::clone(&op)));
+                self.chunk.write_instr(Add, op);
             }
             TokenType::Minus => {
-                self.chunk.write_instr(Subtract, Some(Rc::clone(&op)));
+                self.chunk.write_instr(Subtract, op);
             }
             TokenType::Star => {
-                self.chunk.write_instr(Multiply, Some(Rc::clone(&op)));
+                self.chunk.write_instr(Multiply, op);
             }
             TokenType::Slash => {
-                self.chunk.write_instr(Divide, Some(Rc::clone(&op)));
+                self.chunk.write_instr(Divide, op);
             }
             TokenType::Percent => {
-                self.chunk.write_instr(Remainder, Some(Rc::clone(&op)));
+                self.chunk.write_instr(Remainder, op);
             }
             TokenType::DEqual => {
-                self.chunk.write_instr(Equal, Some(Rc::clone(&op)));
+                self.chunk.write_instr(Equal, op);
             }
             TokenType::BangEqual => {
-                self.chunk.write_instr(Equal, Some(Rc::clone(&op)));
-                self.chunk.write_instr(Not, Some(Rc::clone(&op)));
+                self.chunk.write_instr(Equal, Rc::clone(&op));
+                self.chunk.write_instr(Not, op);
             }
             TokenType::Greater => {
-                self.chunk.write_instr(Greater, Some(Rc::clone(&op)));
+                self.chunk.write_instr(Greater, op);
             }
             TokenType::GreaterEqual => {
-                self.chunk.write_instr(GreaterEqual, Some(Rc::clone(&op)));
+                self.chunk.write_instr(GreaterEqual, op);
             }
             TokenType::Less => {
-                self.chunk.write_instr(Less, Some(Rc::clone(&op)));
+                self.chunk.write_instr(Less, op);
             }
             TokenType::LessEqual => {
-                self.chunk.write_instr(LessEqual, Some(Rc::clone(&op)));
+                self.chunk.write_instr(LessEqual, op);
             }
             _ => unreachable!(),
         }
@@ -751,7 +753,7 @@ impl<'a> Compiler<'a> {
     fn get(&mut self, token: Rc<Token>, instance: &Expr, key: &Expr) -> Result<(), ()> {
         self.expr(instance)?;
         self.expr(key)?;
-        self.chunk.write_instr(Get, Some(Rc::clone(&token)));
+        self.chunk.write_instr(Get, token);
         Ok(())
     }
 
@@ -760,13 +762,13 @@ impl<'a> Compiler<'a> {
         let mut count = 0;
         for arg in args {
             if count == 0xff {
-                self.err(CompileError::TooManyArgs(token));
+                self.err(CompileError::TooManyArgs(arg.token()));
                 return Err(());
             }
             self.expr(arg)?;
             count += 1;
         }
-        self.chunk.write_instr(Call, Some(Rc::clone(&token)));
+        self.chunk.write_instr(Call, token);
         self.chunk.write_byte(count as u8);
         Ok(())
     }
@@ -777,8 +779,13 @@ impl<'a> Compiler<'a> {
         params: &Vec<(Expr, Option<Expr>)>,
         body: &Box<Stml>,
     ) -> Result<(), ()> {
-        let mut compiler =
-            Compiler::new_function(None, body, Rc::clone(&self.state), self.path.clone());
+        let mut compiler = Compiler::new_function(
+            None,
+            body,
+            body.token(),
+            Rc::clone(&self.state),
+            self.path.clone(),
+        );
         compiler.define_variable(Rc::new(Token::default()))?;
         compiler.define_params(params, Rc::clone(&token))?;
         let function = compiler.compile().map_err(|errors| {
@@ -821,23 +828,24 @@ impl<'a> Compiler<'a> {
         let mut optional = 0;
         for param in params.iter().rev() {
             if required + optional == 0xff {
-                self.err(CompileError::TooManyParams(token));
+                self.err(CompileError::TooManyParams(param.0.token()));
                 return Err(());
             }
-            self.definable(&param.0, Rc::clone(&token), false)?;
+            self.definable(&param.0, false)?;
             if param.1.is_some() {
                 optional += 1;
             } else {
                 required += 1;
             }
         }
-        self.chunk.write_instr(FlushTmps, None);
+        self.chunk.write_instr(FlushTmps, token);
         self.arity = Arity::new(Fixed, required, optional);
         Ok(())
     }
 
     fn function_decl(
         &mut self,
+        token: Rc<Token>,
         name: Rc<Token>,
         params: &Vec<(Expr, Option<Expr>)>,
         body: &Stml,
@@ -845,6 +853,7 @@ impl<'a> Compiler<'a> {
         let mut compiler = Compiler::new_function(
             Some(name.lexeme.clone()),
             body,
+            body.token(),
             Rc::clone(&self.state),
             self.path.clone(),
         );
@@ -855,42 +864,33 @@ impl<'a> Compiler<'a> {
                 self.err(err)
             }
         })?;
-        self.write_closure(
-            function,
-            &compiler.state.borrow().up_values,
-            Rc::clone(&name),
-        )?;
+        self.write_closure(function, &compiler.state.borrow().up_values, token)?;
         self.define_variable(name)?;
         Ok(())
     }
 
-    fn definable(
-        &mut self,
-        definable: &Expr,
-        token: Rc<Token>,
-        should_flush: bool,
-    ) -> Result<(), ()> {
+    fn definable(&mut self, definable: &Expr, should_flush: bool) -> Result<(), ()> {
         macro_rules! define {
             ($token:ident) => {{
                 if self.in_global_scope() {
-                    self.define_global(Rc::clone(&$token))?;
+                    self.define_global(Rc::clone($token))?;
                 } else {
-                    self.define_local(Rc::clone(&$token))?;
-                    self.chunk.write_instr(PushTmp, None);
+                    self.define_local(Rc::clone($token))?;
+                    self.chunk.write_instr(PushTmp, definable.token());
                 }
             }};
         }
 
         match definable {
             Expr::Variable(token) => define!(token),
-            Expr::Literal(Literal::List(exprs)) => {
-                self.chunk.write_instr(UnpackList, Some(Rc::clone(&token)));
+            Expr::Literal(Literal::List(token, exprs)) => {
+                self.chunk.write_instr(UnpackList, Rc::clone(token));
                 self.chunk.write_byte(exprs.len() as u8);
                 for expr in exprs.iter().rev() {
-                    self.definable(expr, Rc::clone(&token), false)?;
+                    self.definable(expr, false)?;
                 }
             }
-            Expr::Literal(Literal::Object(props)) => {
+            Expr::Literal(Literal::Object(token, props)) => {
                 let mut has_default = vec![];
                 for (key, _, default) in props {
                     self.write_const(Value::new_string(key.lexeme.clone()), Rc::clone(key))?;
@@ -901,8 +901,7 @@ impl<'a> Compiler<'a> {
                         has_default.push(false);
                     }
                 }
-                self.chunk
-                    .write_instr(UnpackObject, Some(Rc::clone(&token)));
+                self.chunk.write_instr(UnpackObject, Rc::clone(token));
                 self.chunk.write_byte(props.len() as u8);
                 for flag in has_default {
                     self.chunk.write_byte(if flag { 1 } else { 0 } as u8);
@@ -910,30 +909,30 @@ impl<'a> Compiler<'a> {
                 for (key, expr, _) in props {
                     match expr {
                         Some(definable) => {
-                            self.definable(definable, Rc::clone(&token), false)?;
+                            self.definable(definable, false)?;
                         }
                         None => define!(key),
                     }
                 }
             }
-            _ => {
-                self.err(CompileError::InvalidDestructure(token));
+            value => {
+                self.err(CompileError::InvalidDestructure(value.token()));
                 return Err(());
             }
         };
 
         if should_flush {
-            self.chunk.write_instr(FlushTmps, None);
+            self.chunk.write_instr(FlushTmps, definable.token());
         }
 
         Ok(())
     }
 
-    fn settable(&mut self, settable: &Expr, token: Rc<Token>) -> Result<(), ()> {
+    fn settable(&mut self, settable: &Expr) -> Result<(), ()> {
         macro_rules! set {
             ($token:ident) => {{
-                self.set_variable(Rc::clone(&$token))?;
-                self.chunk.write_instr(Pop, None);
+                self.set_variable(Rc::clone($token))?;
+                self.chunk.write_instr(Pop, settable.token());
             }};
         }
 
@@ -942,17 +941,17 @@ impl<'a> Compiler<'a> {
             Expr::Member(token, expr, key) => {
                 self.expr(expr)?;
                 self.expr(key)?;
-                self.chunk.write_instr(Set, Some(Rc::clone(token)));
-                self.chunk.write_instr(Pop, None);
+                self.chunk.write_instr(Set, Rc::clone(token));
+                self.chunk.write_instr(Pop, settable.token());
             }
-            Expr::Literal(Literal::List(exprs)) => {
-                self.chunk.write_instr(UnpackList, Some(Rc::clone(&token)));
+            Expr::Literal(Literal::List(token, exprs)) => {
+                self.chunk.write_instr(UnpackList, Rc::clone(&token));
                 self.chunk.write_byte(exprs.len() as u8);
                 for expr in exprs.iter().rev() {
-                    self.settable(expr, Rc::clone(&token))?;
+                    self.settable(expr)?;
                 }
             }
-            Expr::Literal(Literal::Object(props)) => {
+            Expr::Literal(Literal::Object(token, props)) => {
                 let mut has_default = vec![];
                 for (key, _, default) in props {
                     self.write_const(Value::new_string(key.lexeme.clone()), Rc::clone(key))?;
@@ -963,8 +962,7 @@ impl<'a> Compiler<'a> {
                         has_default.push(false);
                     }
                 }
-                self.chunk
-                    .write_instr(UnpackObject, Some(Rc::clone(&token)));
+                self.chunk.write_instr(UnpackObject, Rc::clone(token));
                 self.chunk.write_byte(props.len() as u8);
                 for flag in has_default {
                     self.chunk.write_byte(if flag { 1 } else { 0 } as u8);
@@ -972,14 +970,14 @@ impl<'a> Compiler<'a> {
                 for (key, expr, _) in props {
                     match expr {
                         Some(settable) => {
-                            self.settable(settable, Rc::clone(&token))?;
+                            self.settable(settable)?;
                         }
                         None => set!(key),
                     }
                 }
             }
-            _ => {
-                self.err(CompileError::InvalidDestructure(token));
+            value => {
+                self.err(CompileError::InvalidDestructure(value.token()));
                 return Err(());
             }
         };
@@ -995,7 +993,7 @@ impl<'a> Compiler<'a> {
                     self.write_const(Value::Nil, Rc::clone(&token))?;
                 }
             };
-            self.definable(definable, Rc::clone(&token), true)?;
+            self.definable(definable, true)?;
         }
         Ok(())
     }
@@ -1007,26 +1005,26 @@ impl<'a> Compiler<'a> {
         }
         match value {
             Some(expr) => {
-                self.expr(&*expr)?;
+                self.expr(expr)?;
             }
             None => {
-                self.write_const(Value::Nil, token)?;
+                self.write_const(Value::Nil, Rc::clone(&token))?;
             }
         }
-        self.chunk.write_instr(Return, None);
+        self.chunk.write_instr(Return, token);
         Ok(())
     }
 
     fn throw_stml(&mut self, token: Rc<Token>, value: &Option<Expr>) -> Result<(), ()> {
         match value {
             Some(expr) => {
-                self.expr(&*expr)?;
+                self.expr(expr)?;
             }
             None => {
                 self.write_const(Value::Nil, Rc::clone(&token))?;
             }
         }
-        self.chunk.write_instr(Throw, Some(token));
+        self.chunk.write_instr(Throw, token);
         Ok(())
     }
 
@@ -1040,11 +1038,11 @@ impl<'a> Compiler<'a> {
 
         while let Some(local) = iter.next() {
             if local.depth == self.scope_depth() {
-                self.state.borrow_mut().locals.pop();
+                let local = self.state.borrow_mut().locals.pop().unwrap();
                 if local.is_captured {
-                    self.chunk.write_instr(CloseUpValue, None);
+                    self.chunk.write_instr(CloseUpValue, local.name);
                 } else {
-                    self.chunk.write_instr(Pop, None);
+                    self.chunk.write_instr(Pop, local.name);
                 }
             } else {
                 break;
@@ -1056,30 +1054,31 @@ impl<'a> Compiler<'a> {
 
     fn if_else_stml(
         &mut self,
+        token: Rc<Token>,
         condition: &Expr,
         if_body: &Box<Stml>,
-        elseifs: &Vec<(Expr, Stml)>,
-        else_body: &Option<Box<Stml>>,
+        elseifs: &Vec<(Rc<Token>, Expr, Stml)>,
+        else_body: &Option<(Rc<Token>, Box<Stml>)>,
     ) -> Result<(), ()> {
         self.expr(condition)?;
-        let false_jump = self.chunk.write_jump(JumpIfFalse, None);
-        self.chunk.write_instr(Pop, None);
+        let false_jump = self.chunk.write_jump(JumpIfFalse, Rc::clone(&token));
+        self.chunk.write_instr(Pop, Rc::clone(&token));
         self.stml(if_body)?;
-        let mut true_jumps = vec![self.chunk.write_jump(Jump, None)];
+        let mut true_jumps = vec![self.chunk.write_jump(Jump, Rc::clone(&token))];
         self.chunk.rewrite_jump(false_jump);
-        self.chunk.write_instr(Pop, None);
+        self.chunk.write_instr(Pop, token);
         let mut iter = elseifs.iter();
-        while let Some((condition, body)) = iter.next() {
+        while let Some((token, condition, body)) = iter.next() {
             self.expr(condition)?;
-            let false_jump = self.chunk.write_jump(JumpIfFalse, None);
-            self.chunk.write_instr(Pop, None);
+            let false_jump = self.chunk.write_jump(JumpIfFalse, Rc::clone(token));
+            self.chunk.write_instr(Pop, Rc::clone(token));
             self.stml(body)?;
-            true_jumps.push(self.chunk.write_jump(Jump, None));
+            true_jumps.push(self.chunk.write_jump(Jump, Rc::clone(token)));
             self.chunk.rewrite_jump(false_jump);
-            self.chunk.write_instr(Pop, None);
+            self.chunk.write_instr(Pop, Rc::clone(token));
         }
         match else_body {
-            Some(stml) => {
+            Some((_, stml)) => {
                 self.stml(stml)?;
             }
             None => {}
@@ -1103,26 +1102,31 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn while_stml(&mut self, condition: &Expr, body: &Box<Stml>) -> Result<(), ()> {
+    fn while_stml(
+        &mut self,
+        token: Rc<Token>,
+        condition: &Expr,
+        body: &Box<Stml>,
+    ) -> Result<(), ()> {
         let start = self.start_loop().start;
 
         self.expr(condition)?;
-        let false_jump = self.chunk.write_jump(JumpIfFalse, None);
-        self.chunk.write_instr(Pop, None);
+        let false_jump = self.chunk.write_jump(JumpIfFalse, Rc::clone(&token));
+        self.chunk.write_instr(Pop, Rc::clone(&token));
         self.stml(body)?;
-        self.chunk.write_loop(start, None);
+        self.chunk.write_loop(start, Rc::clone(&token));
         self.chunk.rewrite_jump(false_jump);
-        self.chunk.write_instr(Pop, None);
+        self.chunk.write_instr(Pop, token);
 
         self.end_loop();
         Ok(())
     }
 
-    fn loop_stml(&mut self, body: &Box<Stml>) -> Result<(), ()> {
+    fn loop_stml(&mut self, token: Rc<Token>, body: &Box<Stml>) -> Result<(), ()> {
         let start = self.start_loop().start;
 
         self.stml(body)?;
-        self.chunk.write_loop(start, None);
+        self.chunk.write_loop(start, token);
 
         self.end_loop();
         Ok(())
@@ -1134,7 +1138,7 @@ impl<'a> Compiler<'a> {
             return Err(());
         }
 
-        let idx = self.chunk.write_jump(Jump, Some(token));
+        let idx = self.chunk.write_jump(Jump, token);
         self.state.borrow_mut().last_loop_mut().breaks.push(idx);
         Ok(())
     }
@@ -1146,7 +1150,7 @@ impl<'a> Compiler<'a> {
         }
 
         let start = self.state.borrow().last_loop().start;
-        self.chunk.write_loop(start, None);
+        self.chunk.write_loop(start, token);
         Ok(())
     }
 
@@ -1212,10 +1216,10 @@ impl<'a> Compiler<'a> {
                 .map_err(|err| self.err(CompileError::IOError(path_token, Rc::new(err))))?,
         };
         let mut parser = Parser::new(source, Some(import_path.path.clone()));
-        let ast = parser.parse().map_err(|errors| {
+        let (ast, eof) = parser.parse().map_err(|errors| {
             self.err(CompileError::ImportParserError(Rc::clone(&token), errors))
         })?;
-        let mut compiler = Compiler::new_module(&ast, import_path.path);
+        let mut compiler = Compiler::new_module(&ast, eof, import_path.path);
         let function = compiler.compile().map_err(|errors| {
             for err in errors {
                 self.err(err)
@@ -1226,9 +1230,9 @@ impl<'a> Compiler<'a> {
             &compiler.state.borrow().up_values,
             Rc::clone(&token),
         )?;
-        self.chunk.write_instr(Call, Some(Rc::clone(&token)));
+        self.chunk.write_instr(Call, token);
         self.chunk.write_byte(0u8);
-        self.definable(definable, token, true)
+        self.definable(definable, true)
     }
 
     pub fn export_stml(&mut self, token: Rc<Token>, stml: &Stml) -> Result<(), ()> {
@@ -1238,8 +1242,8 @@ impl<'a> Compiler<'a> {
         }
 
         match stml {
-            Stml::FunctionDecl(name, params, body) => {
-                self.function_decl(Rc::clone(name), params, body)?
+            Stml::FunctionDecl(token, name, params, body) => {
+                self.function_decl(Rc::clone(token), Rc::clone(name), params, body)?
             }
             Stml::VarDecl(token, decls) => self.var_decl(Rc::clone(token), decls)?,
             _ => unreachable!(),
@@ -1250,18 +1254,19 @@ impl<'a> Compiler<'a> {
 
     fn try_catch_stml(
         &mut self,
+        token: Rc<Token>,
         try_block: &Box<Stml>,
         err: Rc<Token>,
         catch_block: &Box<Stml>,
     ) -> Result<(), ()> {
-        let catch_jump = self.chunk.write_jump(AppendHandler, None);
+        let catch_jump = self.chunk.write_jump(AppendHandler, Rc::clone(&token));
         self.stml(try_block)?;
-        self.chunk.write_instr(PopHandler, None);
-        let finally_jump = self.chunk.write_jump(Jump, None);
+        self.chunk.write_instr(PopHandler, Rc::clone(&token));
+        let finally_jump = self.chunk.write_jump(Jump, token);
         self.chunk.rewrite_jump(catch_jump);
 
         match &**catch_block {
-            Stml::Block(stmls) => {
+            Stml::Block(_, stmls) => {
                 self.start_scope();
                 self.define_variable(err)?;
                 self.stmls(stmls);
@@ -1286,7 +1291,7 @@ impl<'a> Compiler<'a> {
         let counter_idx = self.state.borrow().locals.len();
         macro_rules! get_counter {
             () => {{
-                self.chunk.write_instr(GetLocal, None);
+                self.chunk.write_instr(GetLocal, Rc::clone(&token));
                 self.chunk.write_byte(counter_idx as u8);
             }};
         }
@@ -1294,10 +1299,10 @@ impl<'a> Compiler<'a> {
             () => {{
                 get_counter!();
                 self.write_const(Value::Number(1.0), Rc::clone(&token))?;
-                self.chunk.write_instr(Add, None);
-                self.chunk.write_instr(SetLocal, None);
+                self.chunk.write_instr(Add, Rc::clone(&token));
+                self.chunk.write_instr(SetLocal, Rc::clone(&token));
                 self.chunk.write_byte(counter_idx as u8);
-                self.chunk.write_instr(Pop, None);
+                self.chunk.write_instr(Pop, Rc::clone(&token));
             }};
         }
         self.write_const(Value::Number(0.0), Rc::clone(&token))?;
@@ -1306,63 +1311,75 @@ impl<'a> Compiler<'a> {
         // 2. Check the next element
         let start = self.ip();
         self.expr(iterator)?;
-        self.chunk.write_instr(Size, Some(Rc::clone(&token)));
+        self.chunk.write_instr(Size, Rc::clone(&token));
         get_counter!();
-        self.chunk.write_instr(Greater, None);
+        self.chunk.write_instr(Greater, Rc::clone(&token));
 
-        let false_jump = self.chunk.write_jump(JumpIfFalse, None);
-        self.chunk.write_instr(Pop, None);
+        let false_jump = self.chunk.write_jump(JumpIfFalse, Rc::clone(&token));
+        self.chunk.write_instr(Pop, Rc::clone(&token));
 
         // 3. Compile the block
         self.start_scope();
         self.expr(iterator)?;
         get_counter!();
-        self.chunk.write_instr(Get, None);
-        self.definable(definable, Rc::clone(&token), true)?;
+        self.chunk.write_instr(Get, Rc::clone(&token));
+        self.definable(definable, true)?;
 
-        self.stmls(body.as_block());
+        self.block(body)?;
 
         increase_counter!();
         self.end_scope();
-        self.chunk.write_loop(start, None);
+        self.chunk.write_loop(start, Rc::clone(&token));
         self.chunk.rewrite_jump(false_jump);
-        self.chunk.write_instr(Pop, None);
+        self.chunk.write_instr(Pop, token);
         self.end_scope();
         Ok(())
     }
 
-    pub fn stml(&mut self, stml: &Stml) -> Result<(), ()> {
+    /// doesn't start a new scope
+    /// `block` must be a block, otherwise it panicks
+    fn block(&mut self, block: &Stml) -> Result<(), ()> {
+        match block {
+            Stml::Block(_, stmls) => self.stmls(stmls),
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
+
+    fn stml(&mut self, stml: &Stml) -> Result<(), ()> {
         match stml {
             Stml::Expr(expr) => {
                 self.expr(expr)?;
-                self.chunk.write_instr(Pop, None);
+                self.chunk.write_instr(Pop, expr.token());
             }
-            Stml::FunctionDecl(name, params, body) => {
-                self.function_decl(Rc::clone(name), params, body)?
+            Stml::FunctionDecl(token, name, params, body) => {
+                self.function_decl(Rc::clone(token), Rc::clone(name), params, body)?
             }
             Stml::VarDecl(token, decls) => {
                 self.var_decl(Rc::clone(token), decls)?;
             }
             Stml::Return(token, value) => self.return_stml(Rc::clone(token), value)?,
             Stml::Throw(token, value) => self.throw_stml(Rc::clone(token), value)?,
-            Stml::Block(stmls) => {
+            Stml::Block(_, stmls) => {
                 self.start_scope();
                 self.stmls(stmls);
                 self.end_scope();
             }
-            Stml::IfElse(condition, if_body, elseifs, else_body) => {
-                self.if_else_stml(condition, if_body, elseifs, else_body)?
+            Stml::IfElse(token, condition, if_body, elseifs, else_body) => {
+                self.if_else_stml(Rc::clone(token), condition, if_body, elseifs, else_body)?
             }
-            Stml::While(condition, body) => self.while_stml(condition, body)?,
-            Stml::Loop(body) => self.loop_stml(body)?,
+            Stml::While(token, condition, body) => {
+                self.while_stml(Rc::clone(token), condition, body)?
+            }
+            Stml::Loop(token, body) => self.loop_stml(Rc::clone(token), body)?,
             Stml::Break(token) => self.break_stml(Rc::clone(token))?,
             Stml::Continue(token) => self.continue_stml(Rc::clone(token))?,
             Stml::Import(token, definable, path) => {
                 self.import_stml(Rc::clone(token), definable, Rc::clone(path))?
             }
             Stml::Export(token, stml) => self.export_stml(Rc::clone(token), stml)?,
-            Stml::TryCatch(try_block, err, catch_block) => {
-                self.try_catch_stml(try_block, Rc::clone(err), catch_block)?
+            Stml::TryCatch(token, try_block, err, catch_block) => {
+                self.try_catch_stml(Rc::clone(token), try_block, Rc::clone(err), catch_block)?
             }
             Stml::ForIn(token, definable, iterator, body) => {
                 self.for_in_stml(Rc::clone(token), definable, iterator, body)?
@@ -1371,7 +1388,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    pub fn stmls(&mut self, stmls: &Vec<Stml>) {
+    fn stmls(&mut self, stmls: &Vec<Stml>) {
         for stml in stmls {
             self.stml(stml).ok();
         }
@@ -1389,7 +1406,7 @@ impl<'a> Compiler<'a> {
         match self.typ {
             CompilerType::Function => {
                 self.write_const(Value::Nil, Rc::new(Token::default())).ok(); //? not gonna be used anyways 😅
-                self.chunk.write_instr(Return, None);
+                self.chunk.write_instr(Return, Rc::clone(&self.token));
             }
             CompilerType::Module => {
                 let state = &self.state.borrow();
@@ -1399,17 +1416,20 @@ impl<'a> Compiler<'a> {
                     let local = state.get_local(idx);
                     if local.is_exported {
                         self.chunk
-                            .write_const(Value::new_string(local.name.lexeme.clone()), None)
+                            .write_const(
+                                Value::new_string(local.name.lexeme.clone()),
+                                Rc::clone(&self.token),
+                            )
                             .ok();
-                        self.chunk.write_instr(GetLocal, None);
+                        self.chunk.write_instr(GetLocal, Rc::clone(&self.token));
                         self.chunk.write_byte(idx as u8);
                         sum += 1;
                     }
                 }
 
-                self.chunk.write_instr(BuildObject, None);
+                self.chunk.write_instr(BuildObject, Rc::clone(&self.token));
                 self.chunk.write_byte(sum as u8);
-                self.chunk.write_instr(Return, None);
+                self.chunk.write_instr(Return, Rc::clone(&self.token));
             }
             _ => {}
         }

@@ -87,12 +87,12 @@ fn run_file(path: PathBuf, untrusted: bool) {
 
 fn compile(source: String, path: Option<PathBuf>) -> Result<Function, ()> {
     let mut parser = Parser::new(source, path.clone());
-    let ast = parser.parse().map_err(|errors| {
+    let (ast, eof) = parser.parse().map_err(|errors| {
         for err in errors {
             eprintln!("{err}");
         }
     })?;
-    let mut compiler = Compiler::new(&ast, path);
+    let mut compiler = Compiler::new(&ast, eof, path);
     let script = compiler.compile().map_err(|errors| {
         for err in errors {
             eprintln!("{err}");

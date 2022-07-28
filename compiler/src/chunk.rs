@@ -352,9 +352,9 @@ impl Chunk {
         self.tokens.push(None);
     }
 
-    pub fn write_instr(&mut self, instr: Instruction, token: Option<Rc<Token>>) {
+    pub fn write_instr(&mut self, instr: Instruction, token: Rc<Token>) {
         self.bytes.push(instr.into());
-        self.tokens.push(token);
+        self.tokens.push(Some(token));
     }
 
     pub fn write_2bytes(&mut self, bytes: u16) {
@@ -390,7 +390,7 @@ impl Chunk {
         Ok(idx)
     }
 
-    pub fn write_const(&mut self, value: Value, token: Option<Rc<Token>>) -> Result<usize, ()> {
+    pub fn write_const(&mut self, value: Value, token: Rc<Token>) -> Result<usize, ()> {
         let idx = self.add_constant(value)?;
 
         if idx <= 0xff {
@@ -407,7 +407,7 @@ impl Chunk {
     }
 
     // returns the idx of the jump instruction
-    pub fn write_jump(&mut self, instr: Instruction, token: Option<Rc<Token>>) -> usize {
+    pub fn write_jump(&mut self, instr: Instruction, token: Rc<Token>) -> usize {
         let idx = self.bytes.len();
         self.write_instr(instr, token);
         self.write_2bytes(0);
@@ -418,7 +418,7 @@ impl Chunk {
         &mut self,
         function: Function,
         up_values: &[UpValue],
-        token: Option<Rc<Token>>,
+        token: Rc<Token>,
     ) -> Result<(), ()> {
         self.write_const(Value::new_function(function), token.clone())?;
         self.write_instr(Closure, token);
@@ -430,7 +430,7 @@ impl Chunk {
         Ok(())
     }
 
-    pub fn write_loop(&mut self, start: usize, token: Option<Rc<Token>>) {
+    pub fn write_loop(&mut self, start: usize, token: Rc<Token>) {
         self.write_instr(Loop, token);
         let size = self.len() - 1 - start;
         self.write_2bytes(size as u16);

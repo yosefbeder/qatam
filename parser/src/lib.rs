@@ -229,6 +229,7 @@ impl Parser {
 
     fn list(&mut self) -> Result<Expr, ()> {
         Ok(Expr::Literal(Literal::List(
+            Rc::new(self.clone_previous()),
             self.exprs(TokenType::CBracket)?,
         )))
     }
@@ -274,7 +275,10 @@ impl Parser {
     }
 
     fn object(&mut self) -> Result<Expr, ()> {
-        Ok(Expr::Literal(Literal::Object(self.props()?)))
+        Ok(Expr::Literal(Literal::Object(
+            Rc::new(self.clone_previous()),
+            self.props()?,
+        )))
     }
 
     fn lambda(&mut self) -> Result<Expr, ()> {
@@ -450,6 +454,7 @@ impl Parser {
     }
 
     fn block(&mut self) -> Result<Stml, ()> {
+        let token = self.clone_previous();
         let mut stmls = vec![];
         if !self.check(TokenType::CBrace) {
             while !self.at_end() && !self.check(TokenType::CBrace) {
@@ -457,7 +462,7 @@ impl Parser {
             }
         };
         self.consume(TokenType::CBrace)?;
-        Ok(Stml::Block(stmls))
+        Ok(Stml::Block(Rc::new(token), stmls))
     }
 
     fn return_stml(&mut self) -> Result<Stml, ()> {
@@ -530,13 +535,19 @@ impl Parser {
     }
 
     fn function_decl(&mut self) -> Result<Stml, ()> {
+        let token = self.clone_previous();
         self.consume(TokenType::Identifier)?;
         let name = self.clone_previous();
         self.consume(TokenType::OParen)?;
         let params = self.params(TokenType::CParen)?;
         self.consume(TokenType::OBrace)?;
         let body = self.block()?;
-        Ok(Stml::FunctionDecl(Rc::new(name), params, Box::new(body)))
+        Ok(Stml::FunctionDecl(
+            Rc::new(token),
+            Rc::new(name),
+            params,
+            Box::new(body),
+        ))
     }
 
     fn expr_stml(&mut self) -> Result<Stml, ()> {
@@ -544,18 +555,20 @@ impl Parser {
     }
 
     fn while_stml(&mut self) -> Result<Stml, ()> {
+        let token = self.clone_previous();
         self.consume(TokenType::OParen)?;
         let condition = self.parse_expr()?;
         self.consume(TokenType::CParen)?;
         self.consume(TokenType::OBrace)?;
         let body = self.block()?;
-        Ok(Stml::While(condition, Box::new(body)))
+        Ok(Stml::While(Rc::new(token), condition, Box::new(body)))
     }
 
     fn loop_stml(&mut self) -> Result<Stml, ()> {
+        let token = self.clone_previous();
         self.consume(TokenType::OBrace)?;
         let body = self.block()?;
-        Ok(Stml::Loop(Box::new(body)))
+        Ok(Stml::Loop(Rc::new(token), Box::new(body)))
     }
 
     fn break_stml(&mut self) -> Result<Stml, ()> {
@@ -567,6 +580,7 @@ impl Parser {
     }
 
     fn try_catch(&mut self) -> Result<Stml, ()> {
+        let token = self.clone_previous();
         self.consume(TokenType::OBrace)?;
         let body = self.block()?;
         self.consume(TokenType::Catch)?;
@@ -577,6 +591,7 @@ impl Parser {
         self.consume(TokenType::OBrace)?;
         let catch_body = self.block()?;
         Ok(Stml::TryCatch(
+            Rc::new(token),
             Box::new(body),
             Rc::new(name),
             Box::new(catch_body),
@@ -584,6 +599,8 @@ impl Parser {
     }
 
     fn if_else_stml(&mut self) -> Result<Stml, ()> {
+        let token = self.clone_previous();
+
         self.consume(TokenType::OParen)?;
         let condition = self.parse_expr()?;
         self.consume(TokenType::CParen)?;
@@ -592,6 +609,8 @@ impl Parser {
 
         let mut elseifs = vec![];
         while self.check_consume(TokenType::ElseIf) {
+            let token = self.clone_previous();
+
             self.consume(TokenType::OParen)?;
             let condition = self.parse_expr()?;
             self.consume(TokenType::CParen)?;
@@ -599,17 +618,19 @@ impl Parser {
             self.consume(TokenType::OBrace)?;
             let body = self.block()?;
 
-            elseifs.push((condition, body));
+            elseifs.push((Rc::new(token), condition, body));
         }
 
         let else_body = if self.check_consume(TokenType::Else) {
+            let token = self.clone_previous();
             self.consume(TokenType::OBrace)?;
-            Some(Box::new(self.block()?))
+            Some((Rc::new(token), Box::new(self.block()?)))
         } else {
             None
         };
 
         Ok(Stml::IfElse(
+            Rc::new(token),
             condition,
             Box::new(if_body),
             elseifs,
@@ -639,16 +660,20 @@ impl Parser {
 
     fn var_decl(&mut self) -> Result<(Expr, Option<Expr>), ()> {
         let definable = self.definable()?;
-        let initializer = if !definable.is_variable() {
-            self.consume(TokenType::Equal)?;
-            Some(self.parse_expr()?)
-        } else {
-            if self.check_consume(TokenType::Equal) {
-                Some(self.parse_expr()?)
-            } else {
-                None
+        let initializer;
+        match definable {
+            Expr::Variable(_) => {
+                initializer = if self.check_consume(TokenType::Equal) {
+                    Some(self.parse_expr()?)
+                } else {
+                    None
+                }
             }
-        };
+            _ => {
+                self.consume(TokenType::Equal)?;
+                initializer = Some(self.parse_expr()?)
+            }
+        }
         Ok((definable, initializer))
     }
 
@@ -759,7 +784,7 @@ impl Parser {
         self.expr(9, AssignAbility::AnyOp)
     }
 
-    pub fn parse(&mut self) -> Result<Vec<Stml>, Vec<Error>> {
+    pub fn parse(&mut self) -> Result<(Vec<Stml>, Rc<Token>), Vec<Error>> {
         if cfg!(feature = "verbose") {
             println!("---");
             println!("[DEBUG] started");
@@ -787,7 +812,7 @@ impl Parser {
             if cfg!(feature = "verbose") {
                 println!("{ast:#?}")
             }
-            Ok(ast)
+            Ok((ast, Rc::new(self.current_token().clone())))
         }
     }
 }
