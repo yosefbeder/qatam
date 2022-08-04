@@ -408,10 +408,7 @@ impl<'a, 'b> Frame<'a, 'b> {
 
     /// offset gets added to the current ip
     fn read_byte_at(&self, offset: usize) -> usize {
-        self.closure()
-            .get_chunk()
-            .get_byte(self.ip() + offset)
-            .unwrap() as usize
+        self.closure().get_chunk().byte(self.ip() + offset).unwrap() as usize
     }
 
     fn read_byte(&self) -> usize {
@@ -420,20 +417,20 @@ impl<'a, 'b> Frame<'a, 'b> {
 
     fn read_up_value(&self, offset: usize) -> (bool, usize) {
         (
-            self.closure().get_chunk().get_byte(offset).unwrap() != 0,
-            self.closure().get_chunk().get_byte(offset + 1).unwrap() as usize,
+            self.closure().get_chunk().byte(offset).unwrap() != 0,
+            self.closure().get_chunk().byte(offset + 1).unwrap() as usize,
         )
     }
 
     fn read_2bytes(&self) -> usize {
         combine(
-            self.closure().get_chunk().get_byte(self.ip() + 1).unwrap(),
-            self.closure().get_chunk().get_byte(self.ip() + 2).unwrap(),
+            self.closure().get_chunk().byte(self.ip() + 1).unwrap(),
+            self.closure().get_chunk().byte(self.ip() + 2).unwrap(),
         ) as usize
     }
 
     fn cur_byte(&self) -> Option<u8> {
-        self.closure().get_chunk().get_byte(self.ip())
+        self.closure().get_chunk().byte(self.ip())
     }
 
     fn cur_instr(&self) -> Option<Instruction> {
@@ -441,7 +438,7 @@ impl<'a, 'b> Frame<'a, 'b> {
     }
 
     fn cur_token(&self) -> Rc<Token> {
-        self.closure().get_chunk().get_token(self.ip())
+        self.closure().get_chunk().token(self.ip())
     }
 
     fn pop(&mut self) -> Value {
@@ -540,39 +537,39 @@ impl<'a, 'b> Frame<'a, 'b> {
 
         while let Some(instr) = self.cur_instr() {
             if cfg!(feature = "verbose") {
-                print!(
-                    "{}",
-                    self.closure()
-                        .get_chunk()
-                        .disassemble_instr_at(self.ip(), false)
-                        .0
-                );
+                // print!(
+                //     "{}",
+                //     self.closure()
+                //         .get_chunk()
+                //         .disassemble_instr_at(self.ip(), false)
+                //         .0
+                // );
             }
 
             let mut progress = 1i32;
 
             match instr {
-                Pop => {
+                POP => {
                     self.pop();
                 }
-                Constant8 => {
+                CONSTANT8 => {
                     let idx = self.read_byte();
-                    self.push(self.closure().get_chunk().get_constant(idx));
+                    self.push(self.closure().get_chunk().constant(idx));
                     progress = 2;
                 }
-                Constant16 => {
+                CONSTANT16 => {
                     let idx = self.read_2bytes();
-                    self.push(self.closure().get_chunk().get_constant(idx));
+                    self.push(self.closure().get_chunk().constant(idx));
                     progress = 3;
                 }
-                Negate => {
+                NEGATE => {
                     let popped = self.pop();
                     if !popped.is_number() {
                         err!("يجب أن يكون المعامل رقماً".to_string());
                     }
                     self.push(-popped);
                 }
-                Add => {
+                ADD => {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_addable(&a, &b) {
@@ -580,7 +577,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     self.push(a + b);
                 }
-                Subtract => {
+                SUBTRACT => {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_subtractable(&a, &b) {
@@ -588,7 +585,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     self.push(a - b);
                 }
-                Multiply => {
+                MULTIPLY => {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_multipliable(&a, &b) {
@@ -596,7 +593,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     self.push(a * b);
                 }
-                Divide => {
+                DIVIDE => {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_dividable(&a, &b) {
@@ -604,7 +601,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     self.push(a / b);
                 }
-                Remainder => {
+                REMAINDER => {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_remainderable(&a, &b) {
@@ -612,16 +609,16 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     self.push(a % b);
                 }
-                Not => {
+                NOT => {
                     let popped = self.pop();
                     self.push(!popped);
                 }
-                Equal => {
+                EQUAL => {
                     let b = self.pop();
                     let a = self.pop();
                     self.push(Value::Bool(a == b));
                 }
-                Greater => {
+                GREATER => {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_numbers(&a, &b) {
@@ -629,7 +626,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     self.push(Value::Bool(a > b));
                 }
-                GreaterEqual => {
+                GREATER_EQUAL => {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_numbers(&a, &b) {
@@ -637,7 +634,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     self.push(Value::Bool(a >= b));
                 }
-                Less => {
+                LESS => {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_numbers(&a, &b) {
@@ -645,7 +642,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     self.push(Value::Bool(a < b));
                 }
-                LessEqual => {
+                LESS_EQUAL => {
                     let b = self.pop();
                     let a = self.pop();
                     if !Value::are_numbers(&a, &b) {
@@ -653,27 +650,27 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     self.push(Value::Bool(a <= b));
                 }
-                Jump => {
+                JUMP => {
                     progress = self.read_2bytes() as i32;
                 }
-                JumpIfFalse => {
+                POP_JUMP_IF_FALSE => {
                     if self.last().is_truthy() {
                         progress = 3;
                     } else {
                         progress = self.read_2bytes() as i32;
                     }
                 }
-                JumpIfTrue => {
+                POP_JUMP_IF_TRUE => {
                     if !self.last().is_truthy() {
                         progress = 3;
                     } else {
                         progress = self.read_2bytes() as i32;
                     }
                 }
-                Loop => {
+                LOOP => {
                     progress = -(self.read_2bytes() as i32);
                 }
-                DefineGlobal => {
+                DEFINE_GLOBAL8 => {
                     let name = self.pop().to_string();
                     let value = self.pop();
                     if self.state().globals.contains_key(&name) {
@@ -681,7 +678,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     self.state_mut().globals.insert(name.clone(), value);
                 }
-                SetGlobal => {
+                SET_GLOBAL8 => {
                     let name = self.pop().to_string();
                     let value = self.last().clone();
                     if !self.state().globals.contains_key(&name) {
@@ -689,24 +686,24 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     self.state_mut().globals.insert(name, value);
                 }
-                GetGlobal => {
+                GET_GLOBAL8 => {
                     let name = self.pop().to_string();
                     if !self.state().globals.contains_key(&name) {
                         err!(format!("لا يوجد متغير يسمى {name}"));
                     }
                     self.push(self.state().globals.get(&name).unwrap().clone());
                 }
-                GetLocal => {
+                GET_LOCAL => {
                     let idx = self.slots() + self.read_byte();
                     self.push(self.get(idx).clone());
                     progress = 2;
                 }
-                SetLocal => {
+                SET_LOCAL => {
                     let idx = self.slots() + self.read_byte();
                     *self.get_mut(idx) = self.last().clone();
                     progress = 2;
                 }
-                BuildList => {
+                BUILD_LIST => {
                     let size = self.read_byte();
                     let mut items = vec![];
                     let len = self.state().stack.len();
@@ -716,7 +713,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     self.push(Value::new_list(items));
                     progress = 2;
                 }
-                BuildObject => {
+                BUILD_OBJECT => {
                     let size = self.read_byte();
                     let mut items = HashMap::new();
                     for _ in 0..size {
@@ -727,7 +724,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     self.push(Value::new_object(items));
                     progress = 2;
                 }
-                Get => {
+                GET8 => {
                     let key = self.pop();
                     let obj = self.pop();
                     match obj {
@@ -772,7 +769,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                         }
                     }
                 }
-                Set => {
+                SET8 => {
                     let key = self.pop();
                     let obj = self.pop();
                     match obj {
@@ -801,7 +798,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                         }
                     }
                 }
-                Closure => {
+                CLOSURE8 => {
                     let count = self.read_byte() as usize;
                     let function = self.pop().as_function();
                     let up_values = {
@@ -831,7 +828,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     self.push(Value::new_closure(function, up_values));
                     progress = 2 + count as i32 * 2;
                 }
-                Call => {
+                CALL => {
                     let argc = self.read_byte();
                     let idx = self.state().stack.len() - argc - 1;
                     let enclosing_closure = self.closure().clone();
@@ -895,7 +892,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                         },
                     };
                 }
-                GetUpValue => {
+                GET_UPVALUE => {
                     let idx = self.read_byte();
                     let up_value = self.closure().get_up_value(idx);
                     self.push(match &*up_value.borrow() {
@@ -904,7 +901,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     });
                     progress = 2;
                 }
-                SetUpValue => {
+                SET_UPVALUE => {
                     let idx = self.read_byte();
                     let up_value = self.closure().get_up_value(idx);
                     if up_value.borrow().is_open() {
@@ -914,22 +911,22 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     progress = 2;
                 }
-                CloseUpValue => {
+                CLOSE_UPVALUE => {
                     let idx = self.state().stack.len() - 1;
                     self.state_mut().close_up_values(idx);
                     self.pop();
                 }
-                Return => return Ok(Some(self.pop())),
-                AppendHandler => {
+                RETURN => return Ok(Some(self.pop())),
+                APPEND_HANDLER => {
                     let handler =
                         Handler::new(self.state().stack.len(), self.ip() + self.read_byte());
                     self.handlers_mut().push(handler);
                     progress = 3;
                 }
-                PopHandler => {
+                POP_HANDLER => {
                     self.handlers_mut().pop();
                 }
-                Throw => match self.handlers_mut().pop() {
+                THROW => match self.handlers_mut().pop() {
                     Some(Handler { slots, ip }) => {
                         let throwed = self.pop();
                         self.truncate(slots);
@@ -942,7 +939,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                         return Err(err);
                     }
                 },
-                Size => {
+                SIZE => {
                     let popped = self.pop();
 
                     match &popped {
@@ -955,7 +952,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                         _ => err!("يجب أن يكون نصاً أو قائمة".to_string()),
                     }
                 }
-                UnpackList => {
+                UNPACK_LIST => {
                     let len = self.read_byte();
                     let popped = self.pop();
 
@@ -974,7 +971,7 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     progress = 2;
                 }
-                UnpackObject => {
+                UNPACK_OBJECT => {
                     let len = self.read_byte();
                     let mut keys = vec![];
                     for mut idx in 0..len {
@@ -1010,24 +1007,24 @@ impl<'a, 'b> Frame<'a, 'b> {
                     }
                     progress = 2 + len as i32;
                 }
-                PushTmp => {
+                PUSH_TMP => {
                     let popped = self.pop();
                     self.state_mut().tmps.push(popped)
                 }
-                FlushTmps => {
+                FLUSH_TMPS => {
                     let mut tmps = vec![];
                     tmps.append(&mut self.state_mut().tmps);
                     self.state_mut().stack.append(&mut tmps)
                 }
-                CloneTop => self.push(self.last().clone()),
-                BuildVariadic => {
+                CLONE_TOP => self.push(self.last().clone()),
+                BUILD_VARIADIC => {
                     let arity = self.read_byte();
                     let slots = self.slots();
                     let variadic = self.state_mut().stack.drain(slots + arity + 1..).collect();
                     self.push(Value::new_list(variadic));
                     progress = 2;
                 }
-                Unknown => unreachable!(),
+                UNKNOWN => unreachable!(),
             }
             end!(progress)
         }
