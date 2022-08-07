@@ -44,15 +44,26 @@ impl PartialEq for Value {
     }
 }
 
+impl ops::Neg for Value {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            Self::Number(number) => Self::Number(-number),
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl ops::Add for Value {
     type Output = Self;
 
     /// Adds numbers and concatinates sequences.
     fn add(self, other: Self) -> Self::Output {
-        match (&self, &other) {
+        match (self, other) {
             (Self::Number(a), Self::Number(b)) => Self::Number(a + b),
             (Self::String(a), Self::String(b)) => Self::String(format!("{a}{b}")),
-            (Self::Object(a), Self::Object(b)) => match (&**a, &**b) {
+            (Self::Object(a), Self::Object(b)) => match (&*a, &*b) {
                 (Object::List(a), Object::List(b)) => {
                     let a = a.borrow().clone();
                     let b = b.borrow().clone();
@@ -326,6 +337,24 @@ pub struct Function {
     defaults: Vec<usize>,
     /// Represents the `ip` of the first instruction in the variadic param builder (if the function is variadic) or the code for destructuring otherwise.
     variadic_builder: usize,
+}
+
+impl Function {
+    pub fn new(
+        name: Option<String>,
+        chunk: Chunk,
+        arity: Arity,
+        defaults: Vec<usize>,
+        variadic_builder: usize,
+    ) -> Self {
+        Self {
+            name,
+            chunk,
+            arity,
+            defaults,
+            variadic_builder,
+        }
+    }
 }
 
 impl fmt::Display for Function {

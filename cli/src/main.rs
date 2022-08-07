@@ -1,13 +1,12 @@
 mod args;
 
 use args::{get_action, Action, EvalMode};
-use compiler::value::Function;
+// use compiler::value::Function;
 use compiler::Compiler;
-use exitcode::{DATAERR, USAGE};
+use exitcode::USAGE;
 use parser::Parser;
 use rustyline::Editor;
 use std::{fs, path::PathBuf, process::exit};
-use vm::Vm;
 
 const HELP_MSG: &str = "طريقة الإستخدام:
   قتام [الإعدادات] [الملف [مدخلات البرنامج]]
@@ -46,14 +45,13 @@ fn main() {
 }
 
 fn run_repl() {
-    let mut vm = Vm::new(false);
     let mut rl = Editor::<()>::new();
     loop {
         let readline = rl.readline("> ");
         match readline {
             Ok(line) => {
                 rl.add_history_entry(&line);
-                run_line(&mut vm, line).ok();
+                run_source(line, None)
             }
             Err(_) => {
                 break;
@@ -62,41 +60,26 @@ fn run_repl() {
     }
 }
 
-fn run_line(vm: &mut Vm, line: String) -> Result<(), ()> {
-    vm.run(compile(line, None)?)
+fn run_file(path: PathBuf, _untrusted: bool) {
+    run_source(fs::read_to_string(&path).unwrap(), Some(path))
 }
 
-fn run_file(path: PathBuf, untrusted: bool) {
-    let mut vm = Vm::new(untrusted);
-    let source = match fs::read_to_string(&path) {
-        Ok(source) => source,
-        Err(err) => {
-            eprintln!("{err}");
-            exit(DATAERR)
+fn run_source(source: String, path: Option<PathBuf>) {
+    let (ast, token) = match Parser::new(source, path).parse() {
+        Ok((ast, token)) => (ast, token),
+        Err(errors) => {
+            for err in errors {
+                eprintln!("{err}")
+            }
+            return;
         }
     };
-    let function = match compile(source, Some(path)) {
-        Ok(function) => function,
-        Err(_) => exit(DATAERR),
-    };
-    match vm.run(function) {
-        Ok(_) => {}
-        Err(_) => exit(DATAERR),
+    match Compiler::new(compiler::CompilerType::Script, &ast, token).compile() {
+        Ok(chunk) => print!("{chunk:?}"),
+        Err(errors) => {
+            for err in errors {
+                eprintln!("{err}")
+            }
+        }
     }
-}
-
-fn compile(source: String, path: Option<PathBuf>) -> Result<Function, ()> {
-    let mut parser = Parser::new(source, path.clone());
-    let (ast, eof) = parser.parse().map_err(|errors| {
-        for err in errors {
-            eprintln!("{err}");
-        }
-    })?;
-    let mut compiler = Compiler::new(&ast, eof, path);
-    let script = compiler.compile().map_err(|errors| {
-        for err in errors {
-            eprintln!("{err}");
-        }
-    })?;
-    Ok(script)
 }

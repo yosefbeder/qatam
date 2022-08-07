@@ -32,37 +32,34 @@ macro_rules! byte_enum {
     }
 }
 
-byte_enum!(
+byte_enum! {
     #[allow(non_camel_case_types)]
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub enum Instruction {
-        /// Expects TOS to be a number.
+        /// Implements `Value::neg` on TOS.
         NEGATE,
-        /// Checks whether TOS is truthy or falsy.
-        ///
-        /// Replaces truthy values with false and falsy with true.
-        ///
-        /// `خطأ`, `عدم`, and `0` are falsy and the rest are truthy.
+        /// Implements `Value::not` on TOS.
         NOT,
-        /// Expects the two top-most stack items to be both either `Number`s or `String`s.
+        /// Implmenets `Value::add` on TOS1 and TOS.
         ADD,
-        /// Expects the two top-most stack items to be `Number`s.
+        /// Implements `Value::sub` on TOS1 and TOS.
         SUBTRACT,
-        /// Expects the two top-most stack items to be `Number`s.
+        /// Implements `Value::mul` on TOS1 and TOS.
         MULTIPLY,
-        /// Expects the two top-most stack items to be `Number`s.
+        /// Implements `Value::div` on TOS1 and TOS.
         DIVIDE,
-        /// Expects the two top-most stack items to be `Number`s.
+        /// Implements `Value::rem` on TOS1 and TOS.
         REMAINDER,
         /// Uses `Value::eq`.
         EQUAL,
-        /// Expects the two top-most stack items to be `Number`s.
+        NOT_EQUAL,
+        /// Implemnts `Value::partial_cmp` on TOS1 and TOS, accepting `Ordering::Greater`.
         GREATER,
-        /// Expects the two top-most stack items to be `Number`s.
+        /// Implemnts `Value::partial_cmp` on TOS1 and TOS, accepting `Ordering::Greater` or `Ordering::Equal`.
         GREATER_EQUAL,
-        /// Expects the two top-most stack items to be `Number`s.
+        /// Implemnts `Value::partial_cmp` on TOS1 and TOS, accepting `Ordering::Less`.
         LESS,
-        /// Expects the two top-most stack items to be `Number`s.
+        /// Implemnts `Value::partial_cmp` on TOS1 and TOS, accepting `Ordering::Less` or `Ordering::Equal`.
         LESS_EQUAL,
         /// `CONSTANT8 <idx: u8>`
         ///
@@ -104,6 +101,8 @@ byte_enum!(
         ///
         /// Sets `locals[idx]` to TOS, TOS stays on the stack.
         SET_LOCAL,
+        /// Puts TOS in the variables stack, TOS is popped.
+        DEFINE_LOCAL,
         /// `GET_UPVALUE <idx: u8>`
         ///
         /// Pushes `frame.closure.upvalues[idx]` into the stack.
@@ -204,19 +203,19 @@ byte_enum!(
         ///
         /// Expects TOS to be a list.
         UNPACK_LIST,
-        /// `UNPACK_OBJECT <propc: u16> <default: bool>...`
+        /// `UNPACK_HASH_MAP <propc: u16> <default: bool>...`
         ///
         /// Expects the keys and default values to be on the stack.
         ///
-        /// Expects TOS to be a an object.
-        UNPACK_OBJECT,
+        /// Expects TOS to be a a hash map.
+        UNPACK_HASH_MAP,
         /// Pops TOS off the stack.
         POP,
         /// Duplicates TOS.
         CLONE_TOP,
         UNKNOWN,
     }
-);
+}
 
 use Instruction::*;
 
@@ -313,7 +312,7 @@ impl Chunk {
         idx
     }
 
-    /// `instr` must be `NEGATE`, `NOT`, `ADD`, `SUBTRACT`, `MULTIPLY`, `DIVIDE`, `REMAINDER`, `EQUAL`, `GREATER`, `GREATER_EQUAL`, `LESS`, `LESS_EQUAL`, `CLOSE_UPVALUE`, `BUILD_VARIADIC`, `RETURN`, `POP_HANDLER`, `THROW`, `ITER`, `POP`, or `CLONE_TOP`.
+    /// `instr` must be `NEGATE`, `NOT`, `ADD`, `SUBTRACT`, `MULTIPLY`, `DIVIDE`, `REMAINDER`, `EQUAL`, `GREATER`, `GREATER_EQUAL`, `LESS`, `LESS_EQUAL`, `DEFINE_LOCAL`, `CLOSE_UPVALUE`, `BUILD_VARIADIC`, `RETURN`, `POP_HANDLER`, `THROW`, `ITER`, `POP`, or `CLONE_TOP`.
     pub fn write_instr_no_operands(&self, instr: Instruction, token: Rc<Token>) {
         self.write_instr(instr, token)
     }
@@ -430,13 +429,13 @@ impl Chunk {
     ///
     /// Expects that all of the keys along with their default values have been written before in the form `key default?`.
     ///
-    /// `default` is an array of flags that reflects the structure of the keys and default values already written.
+    /// `defaults` is an array of flags that reflects the structure of the keys and default values already written.
     ///
-    /// Fails when `default` length is greater than 65535.
-    pub fn write_object_unpack(&self, token: Rc<Token>, default: Vec<bool>) -> Result<(), ()> {
-        self.write_instr(UNPACK_OBJECT, token);
-        self.write_two_bytes(default.len())?;
-        for flag in default {
+    /// Fails when `defaults` length is greater than 65535.
+    pub fn write_hash_map_unpack(&self, token: Rc<Token>, defaults: Vec<bool>) -> Result<(), ()> {
+        self.write_instr(UNPACK_HASH_MAP, token);
+        self.write_two_bytes(defaults.len())?;
+        for flag in defaults {
             self.write_byte(if flag { 1 } else { 0 })?;
         }
         Ok(())
@@ -471,16 +470,17 @@ impl fmt::Debug for Chunk {
             let instr = self.bytes.borrow()[ip].into();
             let (line, _) = self.token(ip).pos();
             if line != cur_line {
-                write!(f, "\n{cur_line:5?} | ")?;
+                write!(f, "{line:^5?} | ")?;
                 cur_line = line;
             } else {
                 write!(f, "{} | ", " ".repeat(5))?;
             }
-            write!(f, "{ip} {instr:20?}")?;
+            write!(f, "{ip:<05} {:20}", format!("{instr:?}"))?;
             match instr {
-                NEGATE | NOT | ADD | SUBTRACT | MULTIPLY | DIVIDE | REMAINDER | EQUAL | GREATER
-                | GREATER_EQUAL | LESS | LESS_EQUAL | CLOSE_UPVALUE | BUILD_VARIADIC | RETURN
-                | POP_HANDLER | THROW | ITER | POP | CLONE_TOP => {
+                NEGATE | NOT | ADD | SUBTRACT | MULTIPLY | DIVIDE | REMAINDER | EQUAL
+                | NOT_EQUAL | GREATER | GREATER_EQUAL | LESS | LESS_EQUAL | DEFINE_LOCAL
+                | CLOSE_UPVALUE | BUILD_VARIADIC | RETURN | POP_HANDLER | THROW | ITER | POP
+                | CLONE_TOP => {
                     write!(f, "\n")?;
                     ip += 1;
                 }
@@ -523,12 +523,13 @@ impl fmt::Debug for Chunk {
                     writeln!(f, " {size}")?;
                     ip += 3;
                 }
-                UNPACK_OBJECT => {
+                UNPACK_HASH_MAP => {
                     let propc = two_bytes_oper!();
                     for idx in 0..propc {
-                        let default = byte_oper!(idx * 2 + 2) != 0;
+                        let default = byte_oper!(idx + 2) != 0;
                         write!(f, " {default}")?;
                     }
+                    write!(f, "\n")?;
                     ip += 3 + propc;
                 }
                 UNPACK_LIST => {
