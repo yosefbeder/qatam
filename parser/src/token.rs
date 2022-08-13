@@ -1,159 +1,80 @@
+extern crate variant_count;
+
 use colored::Colorize;
-use std::{cmp::PartialEq, convert::From, convert::Into, fmt, path::PathBuf, rc::Rc};
+use std::{cmp::PartialEq, convert::Into, fmt, path::PathBuf, rc::Rc, string};
+use variant_count::VariantCount;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, VariantCount)]
 pub enum TokenType {
-    OParen,
-    CParen,
-    OBrace,
-    CBrace,
-    OBracket,
-    CBracket,
-    Period,
-    TPeriod,
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    Percent,
-    Comma,
-    QuestionMark,
-    Colon,
-
-    Equal,
-    PlusEqual,
-    MinusEqual,
-    StarEqual,
-    SlashEqual,
-    PercentEqual,
-    DPlus,
-    DMinus,
-
-    DEqual,
-    Bang,
-    BangEqual,
-    Greater,
-    GreaterEqual,
-    Less,
-    LessEqual,
-    And,
-    Or,
-
-    String,
-    UnTermedString,
-    Comment,
-
-    Identifier,
-    If,
-    ElseIf,
-    Else,
-    Function,
-    Var,
-    Loop,
-    While,
-    Break,
-    Continue,
-    Return,
-    Throw,
-    Try,
-    Catch,
-    Nil,
-    True,
-    False,
-    Number,
-    Import,
-    From,
-    Export,
-    Pipe,
-    For,
-    In,
-
-    Unknown,
-    NewLine,
-    EOF,
+    OParen,         // 0
+    CParen,         // 1
+    OBrace,         // 2
+    CBrace,         // 3
+    OBracket,       // 4
+    CBracket,       // 5
+    Period,         // 6
+    TPeriod,        // 7
+    Plus,           // 8
+    Minus,          // 9
+    Star,           // 10
+    Slash,          // 11
+    Percent,        // 12
+    Comma,          // 13
+    QuestionMark,   // 14
+    Colon,          // 15
+    Equal,          // 16
+    PlusEqual,      // 17
+    MinusEqual,     // 18
+    StarEqual,      // 19
+    SlashEqual,     // 20
+    PercentEqual,   // 21
+    DPlus,          // 22
+    DMinus,         // 23
+    DEqual,         // 24
+    Bang,           // 25
+    BangEqual,      // 26
+    Greater,        // 27
+    GreaterEqual,   // 28
+    Less,           // 29
+    LessEqual,      // 30
+    And,            // 31
+    Or,             // 32
+    String,         // 33
+    UnTermedString, // 34
+    Comment,        // 35
+    Identifier,     // 36
+    If,             // 37
+    ElseIf,         // 38
+    Else,           // 39
+    Function,       // 40
+    Var,            // 41
+    Loop,           // 42
+    While,          // 43
+    Break,          // 44
+    Continue,       // 45
+    Return,         // 46
+    Throw,          // 47
+    Try,            // 48
+    Catch,          // 49
+    Nil,            // 50
+    True,           // 51
+    False,          // 52
+    Number,         // 53
+    Import,         // 54
+    From,           // 55
+    Export,         // 56
+    Pipe,           // 57
+    For,            // 58
+    In,             // 59
+    Unknown,        // 60
+    NewLine,        // 61
+    EOF,            // 62
 }
 
-impl From<TokenType> for usize {
-    fn from(typ: TokenType) -> usize {
-        use TokenType::*;
-        match typ {
-            NewLine => 0,
-            OParen => 1,
-            CParen => 2,
-            OBrace => 3,
-            CBrace => 4,
-            OBracket => 5,
-            CBracket => 6,
-            Period => 7,
-            TPeriod => 8,
-            Plus => 9,
-            Minus => 10,
-            Star => 11,
-            Slash => 12,
-            Percent => 13,
-            Comma => 14,
-            QuestionMark => 15,
-            Colon => 16,
-
-            Equal => 17,
-            PlusEqual => 18,
-            MinusEqual => 19,
-            StarEqual => 20,
-            SlashEqual => 21,
-            PercentEqual => 22,
-            DPlus => 23,
-            DMinus => 24,
-
-            DEqual => 25,
-            Bang => 26,
-            BangEqual => 27,
-            Greater => 28,
-            GreaterEqual => 29,
-            Less => 30,
-            LessEqual => 31,
-            And => 32,
-            Or => 33,
-
-            String => 34,
-            UnTermedString => 35,
-            Comment => 36,
-
-            Identifier => 37,
-            If => 38,
-            ElseIf => 39,
-            Else => 40,
-            Function => 41,
-            Var => 42,
-            Loop => 43,
-            While => 44,
-            Break => 45,
-            Continue => 46,
-            Return => 47,
-            Throw => 48,
-            Try => 49,
-            Catch => 50,
-            Nil => 51,
-            True => 52,
-            False => 53,
-            Number => 54,
-
-            Import => 55,
-            From => 56,
-            Export => 57,
-            Pipe => 58,
-            For => 59,
-            In => 60,
-            Unknown => 61,
-            EOF => 62,
-        }
-    }
-}
-
-pub const NUMBER: usize = 63;
+use TokenType::*;
 
 impl Into<&'static str> for TokenType {
     fn into(self) -> &'static str {
-        use TokenType::*;
         match self {
             NewLine => "سطر جديد",
             OParen => "(",
@@ -229,10 +150,10 @@ impl Into<&'static str> for TokenType {
 
 #[derive(Clone)]
 pub struct Token {
-    pub typ: TokenType,
-    source: Rc<String>,
+    typ: TokenType,
+    source: Rc<string::String>,
     path: Option<PathBuf>,
-    pub lexeme: String,
+    lexeme: string::String,
     start: usize,
 }
 
@@ -267,14 +188,14 @@ impl fmt::Display for Token {
             .source
             .lines()
             .nth(line - 1)
-            .unwrap()
+            .unwrap_or("") // ? if it's an ending empty line
             .chars()
             .collect::<Vec<char>>();
-        let start = line.drain(0..col - 1).collect::<String>();
+        let start = line.drain(0..col - 1).collect::<string::String>();
         let lexeme = line
             .drain(0..self.lexeme.chars().count())
-            .collect::<String>();
-        let end = line.drain(..).collect::<String>();
+            .collect::<string::String>();
+        let end = line.drain(..).collect::<string::String>();
         writeln!(f, "{start}{}{end}", lexeme.underline().bold())?;
         write!(f, "{}", format!("{} | ", " ".repeat(indent)).bright_cyan())
     }
@@ -283,9 +204,9 @@ impl fmt::Display for Token {
 impl Token {
     pub fn new(
         typ: TokenType,
-        source: Rc<String>,
+        source: Rc<string::String>,
         path: &Option<PathBuf>,
-        lexeme: String,
+        lexeme: string::String,
         start: usize,
     ) -> Self {
         Self {
@@ -298,6 +219,14 @@ impl Token {
             lexeme,
             start,
         }
+    }
+
+    pub fn typ(&self) -> TokenType {
+        self.typ
+    }
+
+    pub fn lexeme(&self) -> &string::String {
+        &self.lexeme
     }
 
     pub fn pos(&self) -> (usize, usize) {
@@ -320,27 +249,18 @@ impl Token {
     }
 }
 
-impl PartialEq for Token {
-    fn eq(&self, other: &Self) -> bool {
-        match self.typ {
-            TokenType::Identifier
-            | TokenType::String
-            | TokenType::UnTermedString
-            | TokenType::Number
-            | TokenType::Unknown => self.typ == other.typ && self.lexeme == other.lexeme,
-            _ => self.typ == other.typ,
-        }
-    }
-}
-
 impl Default for Token {
     fn default() -> Self {
         Self {
-            typ: TokenType::Unknown,
+            typ: Unknown,
             source: Rc::new("".to_string()),
             path: None,
             lexeme: "".to_string(),
             start: 0,
         }
     }
+}
+
+pub trait TokenInside {
+    fn token(&self) -> Rc<Token>;
 }

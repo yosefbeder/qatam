@@ -1,6 +1,0 @@
-returncode: 0
-stdout:
-يوسف
-مصطفى
-زوزي
-stderr:

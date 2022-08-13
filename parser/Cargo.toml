@@ -5,9 +5,9 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
-lexer = { path = "../lexer" }
-colored = "2.0.0"
-
 [features]
 verbose = []
+
+[dependencies]
+colored = "2.0.0"
+variant_count = "1.1.0"

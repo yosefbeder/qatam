@@ -1,6 +1,0 @@
-returncode: 0
-stdout:
-السلام عليكم
-لسلام عليكم
-السلام
-stderr:

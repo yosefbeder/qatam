@@ -1,6 +1,0 @@
-returncode: 0
-stdout:
-5
-1
-5
-stderr:

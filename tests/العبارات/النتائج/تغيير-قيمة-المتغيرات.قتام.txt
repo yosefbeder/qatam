@@ -1,9 +1,0 @@
-returncode: 0
-stdout:
-5
-20
-25
-500
-20
-20
-stderr:

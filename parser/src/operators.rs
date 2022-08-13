@@ -1,4 +1,4 @@
-use lexer::token::NUMBER;
+use super::token::TokenType;
 
 #[derive(Clone, Copy)]
 pub enum Associativity {
@@ -6,41 +6,42 @@ pub enum Associativity {
     Right,
 }
 
-pub const OPERATORS: [(Option<u8>, Option<u8>, Option<u8>, Option<Associativity>); NUMBER] = [
-    (None, None, None, None),                            // 0
-    (None, None, Some(1), None),                         // 1
+pub const OPERATORS: [(Option<u8>, Option<u8>, Option<u8>, Option<Associativity>);
+    TokenType::VARIANT_COUNT] = [
+    (None, None, Some(1), None),                         // 0
+    (None, None, None, None),                            // 1
     (None, None, None, None),                            // 2
     (None, None, None, None),                            // 3
-    (None, None, None, None),                            // 4
-    (None, None, Some(1), None),                         // 5
-    (None, None, None, None),                            // 6
-    (None, None, Some(1), None),                         // 7
-    (Some(2), None, None, None),                         // 8
-    (None, Some(4), None, Some(Associativity::Left)),    // 9
-    (Some(2), Some(4), None, Some(Associativity::Left)), // 10
+    (None, None, Some(1), None),                         // 4
+    (None, None, None, None),                            // 5
+    (None, None, Some(1), None),                         // 6
+    (None, None, None, None),                            // 7
+    (None, Some(4), None, Some(Associativity::Left)),    // 8
+    (Some(2), Some(4), None, Some(Associativity::Left)), // 9
+    (None, Some(3), None, Some(Associativity::Left)),    // 10
     (None, Some(3), None, Some(Associativity::Left)),    // 11
     (None, Some(3), None, Some(Associativity::Left)),    // 12
-    (None, Some(3), None, Some(Associativity::Left)),    // 13
+    (None, None, None, None),                            // 13
     (None, None, None, None),                            // 14
     (None, None, None, None),                            // 15
-    (None, None, None, None),                            // 16
+    (None, Some(9), None, Some(Associativity::Right)),   // 16
     (None, Some(9), None, Some(Associativity::Right)),   // 17
     (None, Some(9), None, Some(Associativity::Right)),   // 18
     (None, Some(9), None, Some(Associativity::Right)),   // 19
     (None, Some(9), None, Some(Associativity::Right)),   // 20
     (None, Some(9), None, Some(Associativity::Right)),   // 21
-    (None, Some(9), None, Some(Associativity::Right)),   // 22
-    (None, None, Some(1), None),                         // 23
-    (None, None, Some(1), None),                         // 24
-    (None, Some(6), None, Some(Associativity::Left)),    // 25
-    (Some(2), None, None, None),                         // 26
-    (None, Some(6), None, Some(Associativity::Left)),    // 27
+    (None, None, None, None),                            // 22
+    (None, None, None, None),                            // 23
+    (None, Some(6), None, Some(Associativity::Left)),    // 24
+    (Some(2), None, None, None),                         // 25
+    (None, Some(6), None, Some(Associativity::Left)),    // 26
+    (None, Some(5), None, Some(Associativity::Left)),    // 27
     (None, Some(5), None, Some(Associativity::Left)),    // 28
     (None, Some(5), None, Some(Associativity::Left)),    // 29
     (None, Some(5), None, Some(Associativity::Left)),    // 30
-    (None, Some(5), None, Some(Associativity::Left)),    // 31
-    (None, Some(7), None, Some(Associativity::Left)),    // 32
-    (None, Some(8), None, Some(Associativity::Left)),    // 33
+    (None, Some(7), None, Some(Associativity::Left)),    // 31
+    (None, Some(8), None, Some(Associativity::Left)),    // 32
+    (None, None, None, None),                            // 33
     (None, None, None, None),                            // 34
     (None, None, None, None),                            // 35
     (None, None, None, None),                            // 36

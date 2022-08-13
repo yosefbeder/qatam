@@ -1,30 +1,29 @@
-pub mod token;
-
+use super::token::TokenInside;
+use super::token::{Token, TokenType};
 use colored::Colorize;
 use std::{fmt, path::PathBuf, rc::Rc, result};
-use token::{Token, TokenType};
 
-pub type Result = result::Result<Token, LexicalError>;
+pub type Result = result::Result<Rc<Token>, LexicalError>;
 
 #[derive(Debug, Clone)]
 pub enum LexicalError {
-    Unknown(Token),
-    UnTermedString(Token),
+    Unknown(Rc<Token>),
+    UnTermedString(Rc<Token>),
 }
 
-impl LexicalError {
-    pub fn get_token(&self) -> &Token {
+impl TokenInside for LexicalError {
+    fn token(&self) -> Rc<Token> {
         match self {
-            Self::Unknown(token) => token,
-            Self::UnTermedString(token) => token,
+            Self::Unknown(token) => Rc::clone(token),
+            Self::UnTermedString(token) => Rc::clone(token),
         }
     }
 }
 
 impl fmt::Display for LexicalError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let token = self.get_token();
-        let typ: &str = token.typ.to_owned().into();
+        let token = self.token();
+        let typ: &str = token.typ().to_owned().into();
         write!(f, "{}{typ}\n{token}", "خطأ كلمي: ".bright_red())
     }
 }
@@ -84,12 +83,12 @@ impl Lexer {
         }
     }
 
-    fn pop_identifier(&mut self) -> Token {
+    fn pop_identifier(&mut self) -> Rc<Token> {
         let start = self.start;
         let length = self.current - self.start;
         let lexeme = self.slice(start, length);
         self.start = self.current;
-        Token::new(
+        Rc::new(Token::new(
             match lexeme.as_str() {
                 "عدم" => TokenType::Nil,
                 "صحيح" => TokenType::True,
@@ -120,7 +119,7 @@ impl Lexer {
             &self.path,
             lexeme,
             start,
-        )
+        ))
     }
 
     fn pop_token(&mut self, typ: TokenType) -> Result {
@@ -130,9 +129,9 @@ impl Lexer {
         self.start = self.current;
         let token = Token::new(typ, Rc::clone(&self.source), &self.path, lexeme, start);
         match typ {
-            TokenType::Unknown => Err(LexicalError::Unknown(token)),
-            TokenType::UnTermedString => Err(LexicalError::UnTermedString(token)),
-            _ => Ok(token),
+            TokenType::Unknown => Err(LexicalError::Unknown(Rc::new(token))),
+            TokenType::UnTermedString => Err(LexicalError::UnTermedString(Rc::new(token))),
+            _ => Ok(Rc::new(token)),
         }
     }
 
