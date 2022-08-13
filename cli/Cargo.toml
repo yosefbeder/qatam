@@ -1,0 +1,15 @@
+[package]
+name = "قتام"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+debug-parser = ["parser/verbose"]
+debug-compiler = ["compiler/verbose"]
+
+[dependencies]
+parser = { path = "../parser" }
+compiler = { path = "../compiler" }
+rustyline = "10.0.0"
