@@ -8,7 +8,7 @@ pub enum Value {
     Bool(bool),
     Number(f64),
     String(String),
-    Object(Rc<Object>),
+    Object(Object),
 }
 
 impl Value {
@@ -18,11 +18,8 @@ impl Value {
             Self::Nil | Self::Bool(false) => false,
             Self::Number(number) if *number == 0.0 => false,
             Self::String(string) if string.len() == 0 => false,
-            Self::Object(object) => match &**object {
-                Object::List(list) if list.borrow().len() == 0 => false,
-                Object::HashMap(hash_map) if hash_map.borrow().len() == 0 => false,
-                _ => true,
-            },
+            Self::Object(Object::List(list)) if list.borrow().len() == 0 => false,
+            Self::Object(Object::HashMap(hash_map)) if hash_map.borrow().len() == 0 => false,
             _ => true,
         }
     }
@@ -38,7 +35,7 @@ impl PartialEq for Value {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Number(a), Value::Number(b)) => a == b,
             (Value::String(a), Value::String(b)) => a == b,
-            (Value::Object(a), Value::Object(b)) => Rc::ptr_eq(a, b),
+            (Value::Object(a), Value::Object(b)) => a == b,
             _ => false,
         }
     }
@@ -63,14 +60,11 @@ impl ops::Add for Value {
         match (self, other) {
             (Self::Number(a), Self::Number(b)) => Self::Number(a + b),
             (Self::String(a), Self::String(b)) => Self::String(format!("{a}{b}")),
-            (Self::Object(a), Self::Object(b)) => match (&*a, &*b) {
-                (Object::List(a), Object::List(b)) => {
-                    let a = a.borrow().clone();
-                    let b = b.borrow().clone();
-                    Self::from([a, b].concat())
-                }
-                _ => unreachable!(),
-            },
+            (Self::Object(Object::List(a)), Self::Object(Object::List(b))) => {
+                let a = a.borrow().clone();
+                let b = b.borrow().clone();
+                Self::from([a, b].concat())
+            }
             _ => unreachable!(),
         }
     }
@@ -173,63 +167,72 @@ impl From<String> for Value {
     }
 }
 
-impl From<Object> for Value {
-    fn from(object: Object) -> Self {
-        Self::Object(Rc::new(object))
-    }
-}
-
 impl From<HashMap<String, Value>> for Value {
     fn from(hash_map: HashMap<String, Value>) -> Self {
-        Self::from(Object::HashMap(RefCell::new(hash_map)))
+        Self::Object(Object::HashMap(Rc::new(RefCell::new(hash_map))))
     }
 }
 
 impl From<Vec<Value>> for Value {
     fn from(list: Vec<Value>) -> Self {
-        Self::from(Object::List(RefCell::new(list)))
+        Self::Object(Object::List(Rc::new(RefCell::new(list))))
     }
 }
 
 impl From<File> for Value {
     fn from(file: File) -> Self {
-        Self::from(Object::File(RefCell::new(file)))
+        Self::Object(Object::File(Rc::new(RefCell::new(file))))
     }
 }
 
 impl From<Function> for Value {
     fn from(function: Function) -> Self {
-        Self::from(Object::Function(function))
+        Self::Object(Object::Function(Rc::new(function)))
     }
 }
 
 impl From<Closure> for Value {
     fn from(closure: Closure) -> Self {
-        Self::from(Object::Closure(closure))
+        Self::Object(Object::Closure(Rc::new(closure)))
     }
 }
 
 impl From<Native> for Value {
     fn from(native: Native) -> Self {
-        Self::from(Object::Native(native))
+        Self::Object(Object::Native(native))
     }
 }
 
 impl From<Iterator> for Value {
     fn from(iterator: Iterator) -> Self {
-        Self::from(Object::Iterator(iterator))
+        Self::Object(Object::Iterator(Rc::new(iterator)))
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Object {
-    HashMap(RefCell<HashMap<String, Value>>),
-    List(RefCell<Vec<Value>>),
-    File(RefCell<File>),
-    Function(Function),
-    Closure(Closure),
+    HashMap(Rc<RefCell<HashMap<String, Value>>>),
+    List(Rc<RefCell<Vec<Value>>>),
+    File(Rc<RefCell<File>>),
+    Function(Rc<Function>),
+    Closure(Rc<Closure>),
     Native(Native),
-    Iterator(Iterator),
+    Iterator(Rc<Iterator>),
+}
+
+impl PartialEq for Object {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::HashMap(a), Self::HashMap(b)) => Rc::ptr_eq(a, b),
+            (Self::List(a), Self::List(b)) => Rc::ptr_eq(a, b),
+            (Self::File(a), Self::File(b)) => Rc::ptr_eq(a, b),
+            (Self::Function(a), Self::Function(b)) => Rc::ptr_eq(a, b),
+            (Self::Closure(a), Self::Closure(b)) => Rc::ptr_eq(a, b),
+            (Self::Native(a), Self::Native(b)) => *a as usize == *b as usize,
+            (Self::Iterator(a), Self::Iterator(b)) => Rc::ptr_eq(a, b),
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for Object {

@@ -567,13 +567,10 @@ impl fmt::Debug for Chunk {
         }
         for function in inners {
             match function {
-                Value::Object(object) => match object.as_ref() {
-                    Object::Function(function) => {
-                        writeln!(f, "{function}")?;
-                        write!(f, "{:?}", function.chunk())?
-                    }
-                    _ => unreachable!(),
-                },
+                Value::Object(Object::Function(function)) => {
+                    writeln!(f, "{function}")?;
+                    write!(f, "{:?}", function.chunk())?
+                }
                 _ => unreachable!(),
             }
         }
