@@ -28,6 +28,8 @@ pub enum ParseError {
     ExpectedOptional(Rc<Token>),
 }
 
+use ParseError::*;
+
 #[derive(PartialEq, Clone, Copy)]
 enum AssignAbility {
     AnyOp,
@@ -39,7 +41,7 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", "خطأ تحليلي: ".bright_red())?;
         match self {
-            Self::ExpectedInstead(expected, token) => {
+            ExpectedInstead(expected, token) => {
                 let got: &str = token.typ().to_owned().into();
                 write!(
                     f,
@@ -54,14 +56,14 @@ impl fmt::Display for ParseError {
                         .join(" أو "),
                 )
             }
-            Self::ExpectedExpr(token) => {
+            ExpectedExpr(token) => {
                 let got: &str = token.typ().to_owned().into();
                 write!(f, "توقعت عبارة ولكن حصلت على \"{got}\"\n{token}")
             }
-            Self::InvalidRhs(token) => {
+            InvalidRhs(token) => {
                 write!(f, "الجانب الأيمن لعلامة التساوي غير صحيح\n{token}")
             }
-            Self::ExpectedOptional(token) => {
+            ExpectedOptional(token) => {
                 write!(f, "لا يمكن وضع مدخل إجباري بعد مدخل إختياري\n{token}")
             }
         }
@@ -189,7 +191,7 @@ impl Parser {
             Ok(())
         } else {
             let token = self.current_token();
-            self.parse_err(ParseError::ExpectedInstead(vec![typ], token));
+            self.parse_err(ExpectedInstead(vec![typ], token));
             Err(())
         }
     }
@@ -346,7 +348,7 @@ impl Parser {
                 self.group()?
             }
             _ => {
-                self.parse_err(ParseError::ExpectedExpr(token));
+                self.parse_err(ExpectedExpr(token));
                 return Err(());
             }
         };
@@ -365,7 +367,7 @@ impl Parser {
                 }
                 let can_assign = Self::can_assign(op.typ(), assign_abililty);
                 if BINARY_SET.contains(&op.typ()) && !can_assign {
-                    self.parse_err(ParseError::InvalidRhs(Rc::clone(&op)));
+                    self.parse_err(InvalidRhs(Rc::clone(&op)));
                 }
                 expr = Expr::Binary(
                     Box::new(expr),
@@ -491,7 +493,7 @@ impl Parser {
                 while self.check_consume(Comma) {
                     match self.param(closing_token)? {
                         Some((definable, None)) => {
-                            self.parse_err(ParseError::ExpectedOptional(definable.token()))
+                            self.parse_err(ExpectedOptional(definable.token()))
                         }
                         Some((definable, Some(default))) => {
                             optional.push((definable, default));
@@ -637,7 +639,7 @@ impl Parser {
         } else if self.check_consume(OBrace) {
             self.object()?
         } else {
-            self.err(Error::Parse(ParseError::ExpectedInstead(
+            self.err(Error::Parse(ExpectedInstead(
                 vec![Identifier, OBracket, OBrace],
                 self.current_token(),
             )));
@@ -716,7 +718,7 @@ impl Parser {
             Ok(self.vars_decl(Some(token))?)
         } else {
             let token = self.current_token().clone();
-            self.parse_err(ParseError::ExpectedInstead(vec![Function, Var], token));
+            self.parse_err(ExpectedInstead(vec![Function, Var], token));
             Err(())
         }
     }
