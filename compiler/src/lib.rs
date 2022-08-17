@@ -2,7 +2,7 @@ pub mod chunk;
 
 use chunk::value::{self, Arity, ArityType, Value};
 use chunk::Chunk;
-use chunk::Instruction::{self, *};
+use chunk::OpCode::{self, *};
 use colored::Colorize;
 use parser::ast::{Expr, Literal, Stml};
 use parser::{token::*, Parser};
@@ -335,7 +335,6 @@ impl<'a> Compiler<'a> {
     }
 
     fn in_global(&self) -> bool {
-        // TODO change when you add compiler types
         self.typ == CompilerType::Script && self.locals.borrow().depth == 0
     }
 
@@ -349,7 +348,7 @@ impl<'a> Compiler<'a> {
 
     fn write_instr_const(
         &mut self,
-        (u8_instr, u16_instr): (Instruction, Instruction),
+        (u8_instr, u16_instr): (OpCode, OpCode),
         token: Rc<Token>,
         value: Value,
     ) -> Result<(), ()> {
@@ -374,17 +373,17 @@ impl<'a> Compiler<'a> {
     }
 
     #[allow(unused_must_use)]
-    fn write_instr_idx(&mut self, instr: Instruction, token: Rc<Token>, idx: usize) {
-        self.chunk.write_instr_idx(instr, token, idx);
+    fn write_instr_idx(&mut self, op_code: OpCode, token: Rc<Token>, idx: usize) {
+        self.chunk.write_instr_idx(op_code, token, idx);
     }
 
     fn write_string_of_ident(&mut self, token: Rc<Token>) -> Result<(), ()> {
         self.write_const(Rc::clone(&token), Value::from(token.lexeme().clone()))
     }
 
-    fn write_build(&mut self, instr: Instruction, token: Rc<Token>, size: usize) -> Result<(), ()> {
+    fn write_build(&mut self, op_code: OpCode, token: Rc<Token>, size: usize) -> Result<(), ()> {
         self.chunk
-            .write_build(instr, Rc::clone(&token), size)
+            .write_build(op_code, Rc::clone(&token), size)
             .map_err(|_| self.err(HugeSize(token)))
     }
 

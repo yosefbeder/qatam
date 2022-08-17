@@ -12,13 +12,22 @@ fn split(bytes: u16) -> (u8, u8) {
     (bytes as u8, (bytes >> 8) as u8)
 }
 
+/// Implements `Into<u8>` and `From<u8> for the enum created inside.
+///
+/// Variants aren't expected to have payloads or be more than 256.
 macro_rules! byte_enum {
     ($(#[$meta:meta])* $vis:vis enum $name:ident {
-        $($(#[$vmeta:meta])* $vname:ident $(= $val:expr)?,)*
+        $($(#[$vmeta:meta])* $vname:ident,)*
     }) => {
         $(#[$meta])*
         $vis enum $name {
-            $($(#[$vmeta])* $vname $(= $val)?,)*
+            $($(#[$vmeta])* $vname),*
+        }
+
+        impl std::convert::Into<u8> for $name {
+            fn into(self) -> u8 {
+                self as u8
+            }
         }
 
         impl std::convert::From<u8> for $name {
@@ -35,7 +44,7 @@ macro_rules! byte_enum {
 byte_enum! {
     #[allow(non_camel_case_types)]
     #[derive(Debug, Clone, Copy, PartialEq)]
-    pub enum Instruction {
+    pub enum OpCode {
         /// Implements `Value::neg` on TOS.
         NEG,
         /// Implements `Value::not` on TOS.
@@ -217,7 +226,38 @@ byte_enum! {
     }
 }
 
-use Instruction::*;
+use OpCode::*;
+
+#[derive(Clone)]
+pub struct Instruction {
+    op_code: OpCode,
+    operands: Vec<u8>,
+}
+
+impl Instruction {
+    fn new(op_code: OpCode, operands: &[u8]) -> Self {
+        Self {
+            op_code,
+            operands: operands.to_owned(),
+        }
+    }
+
+    pub fn op_code(&self) -> OpCode {
+        self.op_code
+    }
+
+    pub fn read_byte_oper(&self, idx: usize) -> usize {
+        self.operands[idx] as usize
+    }
+
+    pub fn read_two_bytes_oper(&self, idx: usize) -> usize {
+        combine(self.operands[idx], self.operands[idx + 1]) as usize
+    }
+
+    pub fn size(&self) -> usize {
+        1 + self.operands.len()
+    }
+}
 
 const NIL_CONST: usize = 0;
 const TRUE_CONST: usize = 1;
@@ -244,7 +284,7 @@ impl Chunk {
     }
 
     pub fn byte(&self, offset: usize) -> Option<u8> {
-        self.bytes.get(offset).cloned()
+        self.bytes.get(offset).copied()
     }
 
     pub fn constant(&self, idx: usize) -> Value {
@@ -255,19 +295,23 @@ impl Chunk {
         Rc::clone(&self.tokens[ip].as_ref().unwrap())
     }
 
-    fn write_instr(&mut self, instr: Instruction, token: Rc<Token>) {
-        self.bytes.push(instr as u8);
+    fn write_op_code(&mut self, op_code: OpCode, token: Rc<Token>) {
+        self.bytes.push(op_code as u8);
         self.tokens.push(Some(token));
     }
 
     fn write_byte(&mut self, byte: usize) -> Result<(), ()> {
         if byte <= u8::MAX.into() {
-            self.bytes.push(byte as u8);
-            self.tokens.push(None);
+            self.write_byte_unchecked(byte);
             Ok(())
         } else {
             Err(())
         }
+    }
+
+    fn write_byte_unchecked(&mut self, byte: usize) {
+        self.bytes.push(byte as u8);
+        self.tokens.push(None)
     }
 
     fn write_two_bytes(&mut self, two_bytes: usize) -> Result<(), ()> {
@@ -312,41 +356,41 @@ impl Chunk {
         idx
     }
 
-    /// `instr` must be `NEG`, `NOT`, `ADD`, `SUB`, `MUL`, `DIV`, `REM`, `EQ`, `GREATER`, `GREATER_EQ`, `LESS`, `LESS_EQ`, `DEF_LOCAL`, `GET`, `SET`, `CLOSE_UPVALUE`, `BUILD_VARIADIC`, `RET`, `POP_HANDLER`, `THROW`, `ITER`, `POP`, or `DUP`.
-    pub fn write_instr_no_operands(&mut self, instr: Instruction, token: Rc<Token>) {
-        self.write_instr(instr, token)
+    /// `op_code` must be `NEG`, `NOT`, `ADD`, `SUB`, `MUL`, `DIV`, `REM`, `EQ`, `GREATER`, `GREATER_EQ`, `LESS`, `LESS_EQ`, `DEF_LOCAL`, `GET`, `SET`, `CLOSE_UPVALUE`, `BUILD_VARIADIC`, `RET`, `POP_HANDLER`, `THROW`, `ITER`, `POP`, or `DUP`.
+    pub fn write_instr_no_operands(&mut self, op_code: OpCode, token: Rc<Token>) {
+        self.write_op_code(op_code, token)
     }
 
-    /// `instr` must be `GET_LOCAL`, `SET_LOCAL`, `GET_UPVALUE`, or `SET_UPVALUE`.
+    /// `op_code` must be `GET_LOCAL`, `SET_LOCAL`, `GET_UPVALUE`, or `SET_UPVALUE`.
     ///
     /// Fails when `idx` is greater than 255.
     pub fn write_instr_idx(
         &mut self,
-        instr: Instruction,
+        op_code: OpCode,
         token: Rc<Token>,
         idx: usize,
     ) -> Result<(), ()> {
-        self.write_instr(instr, token);
+        self.write_op_code(op_code, token);
         self.write_byte(idx)
     }
 
-    /// `instr` must be (`CONST8`, `CONST16`), (`GET_GLOBAL8`, `GET_GLOBAL16`), (`SET_GLOBAL8`, `SET_GLOBAL16`), (`DEF_GLOBAL8`, `DEF_GLOBAL16`), (`GET8`, `GET_16`), or (`SET8`, `SET16`).
+    /// `op_code` must be (`CONST8`, `CONST16`), (`GET_GLOBAL8`, `GET_GLOBAL16`), (`SET_GLOBAL8`, `SET_GLOBAL16`), (`DEF_GLOBAL8`, `DEF_GLOBAL16`), (`GET8`, `GET_16`), or (`SET8`, `SET16`).
     ///
     /// Fails when the chunk already has 65536 constants.
     pub fn write_instr_const(
         &mut self,
-        (u8_instr, u16_instr): (Instruction, Instruction),
+        (u8_op_code, u16_op_code): (OpCode, OpCode),
         token: Rc<Token>,
         value: Value,
     ) -> Result<(), ()> {
         match self.add_constant(value) {
             idx if idx <= u8::MAX.into() => {
-                self.write_instr(u8_instr, token);
+                self.write_op_code(u8_op_code, token);
                 self.write_byte(idx).ok();
                 Ok(())
             }
             idx if idx <= u16::MAX.into() => {
-                self.write_instr(u16_instr, token);
+                self.write_op_code(u16_op_code, token);
                 self.write_two_bytes(idx).ok();
                 Ok(())
             }
@@ -354,12 +398,12 @@ impl Chunk {
         }
     }
 
-    /// `instr` must be `JUMP`, `POP_JUMP_IF_FALSE`, `POP_JUMP_IF_TRUE`, `JUMP_IF_FALSE_OR_POP`, `JUMP_IF_TRUE_OR_POP`, `FOR_ITER`, or `APPEND_HANDLER`.
+    /// `op_code` must be `JUMP`, `POP_JUMP_IF_FALSE`, `POP_JUMP_IF_TRUE`, `JUMP_IF_FALSE_OR_POP`, `JUMP_IF_TRUE_OR_POP`, `FOR_ITER`, or `APPEND_HANDLER`.
     ///
     /// Returns its indx
-    pub fn write_jump(&mut self, instr: Instruction, token: Rc<Token>) -> usize {
+    pub fn write_jump(&mut self, op_code: OpCode, token: Rc<Token>) -> usize {
         let idx = self.len();
-        self.write_instr(instr, token);
+        self.write_op_code(op_code, token);
         self.write_two_bytes(0).ok();
         idx
     }
@@ -377,7 +421,7 @@ impl Chunk {
     /// Fails when chunk length - `ip` is greater than 65535.
     pub fn write_loop(&mut self, token: Rc<Token>, ip: usize) -> Result<(), ()> {
         let offset = self.len() - ip;
-        self.write_instr(LOOP, token);
+        self.write_op_code(LOOP, token);
         self.write_two_bytes(offset)
     }
 
@@ -391,28 +435,28 @@ impl Chunk {
         self.write_instr_const((CLOSURE8, CLOSURE16), token, Value::from(function))?;
         self.write_byte(upvalues.len())?;
         for (local, idx) in upvalues {
-            self.write_byte(if local { 1 } else { 0 }).ok();
-            self.write_byte(idx).ok();
+            self.write_byte_unchecked(if local { 1 } else { 0 });
+            self.write_byte_unchecked(idx);
         }
         Ok(())
     }
 
     /// Fails when `argc` is greater than 255.
     pub fn write_call(&mut self, token: Rc<Token>, argc: usize) -> Result<(), ()> {
-        self.write_instr(CALL, token);
+        self.write_op_code(CALL, token);
         self.write_byte(argc)
     }
 
-    /// `instr` must be `BUILD_LIST` or `BUILD_HASH_MAP`.
+    /// `op_code` must be `BUILD_LIST` or `BUILD_HASH_MAP`.
     ///
     /// Fails when `size` is greater than 65535.
     pub fn write_build(
         &mut self,
-        instr: Instruction,
+        op_code: OpCode,
         token: Rc<Token>,
         size: usize,
     ) -> Result<(), ()> {
-        self.write_instr(instr, token);
+        self.write_op_code(op_code, token);
         self.write_two_bytes(size)
     }
 
@@ -426,7 +470,7 @@ impl Chunk {
         token: Rc<Token>,
         defaults: Vec<bool>,
     ) -> Result<(), ()> {
-        self.write_instr(UNPACK_HASH_MAP, token);
+        self.write_op_code(UNPACK_HASH_MAP, token);
         self.write_two_bytes(defaults.len())?;
         for flag in defaults {
             self.write_byte(if flag { 1 } else { 0 })?;
@@ -436,20 +480,11 @@ impl Chunk {
 
     /// Fails when `to` is greater than 65535
     pub fn write_list_unpack(&mut self, token: Rc<Token>, to: usize) -> Result<(), ()> {
-        self.write_instr(UNPACK_LIST, token);
+        self.write_op_code(UNPACK_LIST, token);
         self.write_two_bytes(to)
     }
-}
 
-impl fmt::Debug for Chunk {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        const LINE_WIDTH: usize = 5;
-        const OFFSET_WIDTH: usize = 5;
-        const INSTRUCTION_WIDTH: usize = 20;
-        let mut ip = 0;
-        let mut cur_line = 0;
-        let mut inners = vec![];
-
+    pub fn read(&self, ip: usize) -> Option<Instruction> {
         macro_rules! byte_oper {
             ($($offset:expr)?) => {
                 self.bytes[ip + 1$( + ($offset))?] as usize
@@ -460,118 +495,142 @@ impl fmt::Debug for Chunk {
                 combine(self.bytes[ip + 1$( + ($offset))?], self.bytes[ip + 2$( + ($offset))?]) as usize
             };
         }
-
-        while ip < self.len() {
-            let instr = self.bytes[ip].into();
-            let token = self.token(ip);
-            let (line, _) = token.pos();
-            if line != cur_line {
-                if cur_line != 0 {
-                    write!(f, "\n")?
-                }
-                write!(f, "{line:^LINE_WIDTH$?} ")?;
-                cur_line = line;
-            } else {
-                write!(f, "{} ", " ".repeat(LINE_WIDTH))?;
+        macro_rules! operands {
+            ($size:expr) => {
+                &self.bytes[ip + 1..ip + $size]
+            };
+        }
+        let op_code = self.byte(ip)?.into();
+        match op_code {
+            NEG | NOT | ADD | SUB | MUL | DIV | REM | EQ | NOT_EQ | GREATER | GREATER_EQ | LESS
+            | LESS_EQ | POP_LOCAL | CLOSE_UPVALUE | BUILD_VARIADIC | RET | POP_HANDLER | THROW
+            | ITER | POP | DUP | GET | SET | DEF_LOCAL => {
+                Some(Instruction::new(op_code, operands!(1)))
             }
-            write!(
-                f,
-                "{ip:>OFFSET_WIDTH$} {:INSTRUCTION_WIDTH$}",
-                format!("{instr:?}")
-            )?;
-            match instr {
-                NEG | NOT | ADD | SUB | MUL | DIV | REM | EQ | NOT_EQ | GREATER | GREATER_EQ
-                | LESS | LESS_EQ | POP_LOCAL | CLOSE_UPVALUE | BUILD_VARIADIC | RET
-                | POP_HANDLER | THROW | ITER | POP | DUP | GET | SET => {
-                    write!(f, "\n")?;
-                    ip += 1;
+            GET_LOCAL | SET_LOCAL | GET_UPVALUE | SET_UPVALUE | CONST8 | GET_GLOBAL8
+            | SET_GLOBAL8 | DEF_GLOBAL8 | CALL => Some(Instruction::new(op_code, operands!(2))),
+            CONST16
+            | GET_GLOBAL16
+            | SET_GLOBAL16
+            | DEF_GLOBAL16
+            | JUMP
+            | POP_JUMP_IF_FALSY
+            | POP_JUMP_IF_TRUTHY
+            | JUMP_IF_FALSY_OR_POP
+            | JUMP_IF_TRUTHY_OR_POP
+            | FOR_ITER
+            | APPEND_HANDLER
+            | LOOP
+            | BUILD_LIST
+            | BUILD_HASH_MAP
+            | UNPACK_LIST => Some(Instruction::new(op_code, operands!(3))),
+            UNPACK_HASH_MAP => Some(Instruction::new(op_code, operands!(3 + two_bytes_oper!()))),
+            CLOSURE8 => Some(Instruction::new(op_code, operands!(3 + byte_oper!(1) * 2))),
+            CLOSURE16 => Some(Instruction::new(op_code, operands!(4 + byte_oper!(2) * 2))),
+            UNKNOWN => unreachable!(),
+        }
+    }
+
+    fn disassemble_instr(&self, ip: usize) -> Option<(String, usize)> {
+        let instr = self.read(ip)?;
+        let token = self.token(ip);
+        let mut buf = String::new();
+        buf += format!("{:>5} {:20}", ip, format!("{:?}", instr.op_code())).as_str();
+        match instr.op_code() {
+            NEG | NOT | ADD | SUB | MUL | DIV | REM | EQ | NOT_EQ | GREATER | GREATER_EQ | LESS
+            | LESS_EQ | POP_LOCAL | CLOSE_UPVALUE | BUILD_VARIADIC | RET | POP_HANDLER | THROW
+            | ITER | POP | DUP | GET | SET => {}
+            DEF_LOCAL => buf += format!(" ({})", token.lexeme()).as_str(),
+            GET_LOCAL | SET_LOCAL | GET_UPVALUE | SET_UPVALUE => {
+                buf += format!(" {} ({})", instr.read_byte_oper(0), token.lexeme()).as_str()
+            }
+            CONST8 | GET_GLOBAL8 | SET_GLOBAL8 | DEF_GLOBAL8 => {
+                let idx = instr.read_byte_oper(0);
+                buf += format!(" {idx} ({})", self.constant(idx)).as_str()
+            }
+            CONST16 | GET_GLOBAL16 | SET_GLOBAL16 | DEF_GLOBAL16 => {
+                let idx = instr.read_two_bytes_oper(0);
+                buf += format!(" {idx} ({})", self.constant(idx)).as_str()
+            }
+            JUMP
+            | POP_JUMP_IF_FALSY
+            | POP_JUMP_IF_TRUTHY
+            | JUMP_IF_FALSY_OR_POP
+            | JUMP_IF_TRUTHY_OR_POP
+            | FOR_ITER
+            | APPEND_HANDLER => {
+                let offset = instr.read_two_bytes_oper(0);
+                buf += format!(" {offset} (to {})", ip + offset).as_str()
+            }
+            LOOP => {
+                let offset = instr.read_two_bytes_oper(0);
+                buf += format!(" {offset} (back to {})", ip - offset).as_str()
+            }
+            CLOSURE8 | CLOSURE16 => {
+                let (idx, upvaluec, size) = match instr.op_code() {
+                    CLOSURE8 => (instr.read_byte_oper(0), instr.read_byte_oper(1), 2),
+                    CLOSURE16 => (instr.read_two_bytes_oper(0), instr.read_byte_oper(2), 3),
+                    _ => unreachable!(),
+                };
+                let function = self.constant(idx);
+                buf += format!(" {idx} ({function})").as_str();
+                for idx in 0..upvaluec {
+                    let local = instr.read_byte_oper(size + idx * 2) != 0;
+                    let idx = instr.read_byte_oper(size + idx * 2 + 1);
+                    buf += format!(" {:?}", (local, idx)).as_str()
                 }
-                DEF_LOCAL => {
-                    writeln!(f, " ({})", token.lexeme())?;
-                    ip += 1;
+            }
+            CALL => {
+                let argc = instr.read_byte_oper(0);
+                buf += format!(" {argc}").as_str()
+            }
+            BUILD_LIST | BUILD_HASH_MAP => {
+                let size = instr.read_two_bytes_oper(0);
+                buf += format!(" {size}").as_str()
+            }
+            UNPACK_HASH_MAP => {
+                let propc = instr.read_two_bytes_oper(0);
+                for idx in 0..propc {
+                    let default = instr.read_byte_oper(2 + idx) != 0;
+                    buf += format!(" {default}").as_str()
                 }
-                GET_LOCAL | SET_LOCAL | GET_UPVALUE | SET_UPVALUE => {
-                    let idx = byte_oper!();
-                    writeln!(f, " {idx} ({})", token.lexeme())?;
-                    ip += 2;
+            }
+            UNPACK_LIST => {
+                let to = instr.read_two_bytes_oper(0);
+                buf += format!(" {to}").as_str()
+            }
+            UNKNOWN => unreachable!(),
+        }
+        Some((buf, instr.size()))
+    }
+}
+
+impl fmt::Debug for Chunk {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut ip = 0;
+        if let Some((instr, size)) = self.disassemble_instr(ip) {
+            let (mut line, _) = self.token(ip).pos();
+            write!(f, "{line:<5} {instr}")?;
+            ip += size;
+            while let Some((instr, size)) = self.disassemble_instr(ip) {
+                let pos = self.token(ip).pos();
+                if pos.0 != line {
+                    (line, _) = pos;
+                    write!(f, "\n{line:<5} ")?
+                } else {
+                    write!(f, "\n{:5} ", "")?
                 }
-                CONST8 | GET_GLOBAL8 | SET_GLOBAL8 | DEF_GLOBAL8 => {
-                    let idx = byte_oper!();
-                    writeln!(f, " {idx} ({})", self.constant(idx))?;
-                    ip += 2;
-                }
-                CONST16 | GET_GLOBAL16 | SET_GLOBAL16 | DEF_GLOBAL16 => {
-                    let idx = two_bytes_oper!();
-                    writeln!(f, " {idx} ({})", self.constant(idx))?;
-                    ip += 3;
-                }
-                JUMP
-                | POP_JUMP_IF_FALSY
-                | POP_JUMP_IF_TRUTHY
-                | JUMP_IF_FALSY_OR_POP
-                | JUMP_IF_TRUTHY_OR_POP
-                | FOR_ITER
-                | APPEND_HANDLER => {
-                    let offset = two_bytes_oper!();
-                    writeln!(f, " {offset} (to {})", ip + offset)?;
-                    ip += 3;
-                }
-                LOOP => {
-                    let offset = two_bytes_oper!();
-                    writeln!(f, " {offset} (back to {})", ip - offset)?;
-                    ip += 3;
-                }
-                CLOSURE8 | CLOSURE16 => {
-                    let (idx, upvaluec, size) = match instr {
-                        CLOSURE8 => (byte_oper!(), byte_oper!(1), 2),
-                        CLOSURE16 => (two_bytes_oper!(), byte_oper!(2), 3),
-                        _ => unreachable!(),
-                    };
-                    let function = self.constant(idx);
-                    write!(f, " {idx} ({function})")?;
-                    for idx in 0..upvaluec {
-                        let local = byte_oper!(idx * 2 + size) != 0;
-                        let idx = byte_oper!(idx * 2 + size + 1);
-                        write!(f, " {:?}", (local, idx))?;
-                    }
-                    write!(f, "\n")?;
-                    inners.push(function);
-                    ip += 1 + size + upvaluec * 2;
-                }
-                CALL => {
-                    let argc = byte_oper!();
-                    writeln!(f, " {argc}")?;
-                    ip += 2;
-                }
-                BUILD_LIST | BUILD_HASH_MAP => {
-                    let size = two_bytes_oper!();
-                    writeln!(f, " {size}")?;
-                    ip += 3;
-                }
-                UNPACK_HASH_MAP => {
-                    let propc = two_bytes_oper!();
-                    for idx in 0..propc {
-                        let default = byte_oper!(idx + 2) != 0;
-                        write!(f, " {default}")?;
-                    }
-                    write!(f, "\n")?;
-                    ip += 3 + propc;
-                }
-                UNPACK_LIST => {
-                    let to = two_bytes_oper!();
-                    writeln!(f, " {to}")?;
-                    ip += 3;
-                }
-                UNKNOWN => unreachable!(),
+                write!(f, "{instr}")?;
+                ip += size
             }
         }
-        for function in inners {
-            match function {
+        for constant in &self.constants {
+            match constant {
                 Value::Object(Object::Function(function)) => {
-                    writeln!(f, "{function}")?;
+                    writeln!(f, "\n[CHUNK] {function}'s chunk")?;
                     write!(f, "{:?}", function.chunk())?
                 }
-                _ => unreachable!(),
+                _ => {}
             }
         }
         Ok(())
