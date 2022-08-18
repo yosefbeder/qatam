@@ -210,9 +210,9 @@ impl Locals {
 
     /// Fails when `self.upvalues` is larger than 256.
     fn add_upvalue(&mut self, local: bool, idx: usize) -> Result<usize, ()> {
-        for (idx, upvalue) in self.upvalues.iter().enumerate() {
+        for (upvalue_idx, upvalue) in self.upvalues.iter().enumerate() {
             if upvalue.0 == local && upvalue.1 == idx {
-                return Ok(idx);
+                return Ok(upvalue_idx);
             }
         }
         if self.upvalues.capacity() == self.inner.len() {
