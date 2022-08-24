@@ -781,7 +781,7 @@ impl<'a> Compiler<'a> {
             Expr::Variable(..) | Expr::Member(..) => self.set(settable, true)?,
             Expr::Literal(Literal::List(token, exprs)) => {
                 self.write_list_unpack(Rc::clone(token), exprs.len())?;
-                for settable in exprs {
+                for settable in exprs.iter().rev() {
                     self.settable(settable)?
                 }
             }
@@ -825,7 +825,7 @@ impl<'a> Compiler<'a> {
             Expr::Variable(token) => oper!(token),
             Expr::Literal(Literal::List(token, exprs)) => {
                 self.write_list_unpack(Rc::clone(token), exprs.len())?;
-                for definable in exprs {
+                for definable in exprs.iter().rev() {
                     self.definable(definable, export)?
                 }
             }
