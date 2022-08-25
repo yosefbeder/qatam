@@ -4,14 +4,6 @@ use parser::token::Token;
 use std::{fmt, rc::Rc};
 use value::{Function, Object, Value};
 
-fn combine(a: u8, b: u8) -> u16 {
-    (b as u16) << 8 | (a as u16)
-}
-
-fn split(bytes: u16) -> (u8, u8) {
-    (bytes as u8, (bytes >> 8) as u8)
-}
-
 /// Implements `Into<u8>` and `From<u8> for the enum created inside.
 ///
 /// Variants aren't expected to have payloads or be more than 256.
@@ -45,38 +37,38 @@ byte_enum! {
     #[allow(non_camel_case_types)]
     #[derive(Debug, Clone, Copy, PartialEq)]
     pub enum OpCode {
-        /// Implements `Value::neg` on TOS.
+        /// Implements `Value::neg` on TOT.
         NEG,
-        /// Implements `Value::not` on TOS.
+        /// Implements `Value::not` on TOT.
         NOT,
-        /// Implmenets `Value::add` on TOS1 and TOS.
+        /// Implmenets `Value::add` on TOT1 and TOT.
         ADD,
-        /// Implements `Value::sub` on TOS1 and TOS.
+        /// Implements `Value::sub` on TOT1 and TOT.
         SUB,
-        /// Implements `Value::mul` on TOS1 and TOS.
+        /// Implements `Value::mul` on TOT1 and TOT.
         MUL,
-        /// Implements `Value::div` on TOS1 and TOS.
+        /// Implements `Value::div` on TOT1 and TOT.
         DIV,
-        /// Implements `Value::rem` on TOS1 and TOS.
+        /// Implements `Value::rem` on TOT1 and TOT.
         REM,
         /// Uses `Value::eq`.
         EQ,
         NOT_EQ,
-        /// Implemnts `Value::partial_cmp` on TOS1 and TOS, accepting `Ordering::Greater`.
+        /// Implemnts `Value::partial_cmp` on TOT1 and TOT, accepting `Ordering::Greater`.
         GREATER,
-        /// Implemnts `Value::partial_cmp` on TOS1 and TOS, accepting `Ordering::Greater` or `Ordering::Equal`.
+        /// Implemnts `Value::partial_cmp` on TOT1 and TOT, accepting `Ordering::Greater` or `Ordering::Equal`.
         GREATER_EQ,
-        /// Implemnts `Value::partial_cmp` on TOS1 and TOS, accepting `Ordering::Less`.
+        /// Implemnts `Value::partial_cmp` on TOT1 and TOT, accepting `Ordering::Less`.
         LESS,
-        /// Implemnts `Value::partial_cmp` on TOS1 and TOS, accepting `Ordering::Less` or `Ordering::Equal`.
+        /// Implemnts `Value::partial_cmp` on TOT1 and TOT, accepting `Ordering::Less` or `Ordering::Equal`.
         LESS_EQ,
         /// `CONST8 <idx: u8>`
         ///
-        /// Pushes `constants[idx]` into the stack.
+        /// Pushes `constants[idx]` to tmps.
         CONST8,
         /// `CONST16 <idx: u16>`
         ///
-        /// Pushes `constants[idx]` into the stack.
+        /// Pushes `constants[idx]` to tmps.
         CONST16,
         /// `JUMP <offset: u16>`
         ///
@@ -84,25 +76,25 @@ byte_enum! {
         JUMP,
         /// `JUMP_IF_FALSY_OR_POP <offset: u16>`
         ///
-        /// Jumps if TOS is false otherwise TOS is popped.
+        /// Jumps if TOT is false otherwise TOT is popped.
         JUMP_IF_FALSY_OR_POP,
         /// `JUMP_IF_TRUTHY_OR_POP <offset: u16>`
         ///
-        /// Jumps if TOS is true otherwise TOS is popped.
+        /// Jumps if TOT is true otherwise TOT is popped.
         JUMP_IF_TRUTHY_OR_POP,
         /// `POP_JUMP_IF_FALSY <offset: u16>`
         ///
-        /// Jumps if TOS is false, TOS is popped.
+        /// Jumps if TOT is false, TOT is popped.
         POP_JUMP_IF_FALSY,
         /// `POP_JUMP_IF_TRUTHY <offset: u16>`
         ///
-        /// Jumps if TOS is true, TOS is popped.
+        /// Jumps if TOT is true, TOT is popped.
         POP_JUMP_IF_TRUTHY,
         /// `FOR_ITER <offset: u16>`
         ///
-        /// Keeps advancing the iterator (TOS) pushing the result into the stack until `None` is returned.
+        /// Keeps advancing the iterator (TOT) pushing the result to tmps until `None` is returned.
         ///
-        /// When `None` is returned by the iterator it pops TOS and jumps.
+        /// When `None` is returned by the iterator it pops TOT and jumps.
         FOR_ITER,
         /// `LOOP <offset: u16>`
         ///
@@ -110,117 +102,147 @@ byte_enum! {
         LOOP,
         /// `GET_LOCAL <idx: u8>`
         ///
-        /// Pushes `locals[idx]` into the stack.
+        /// Pushes `locals[frame.slots + idx]` to tmps.
         GET_LOCAL,
         /// `SET_LOCAL <idx: u8>`
         ///
-        /// Sets `locals[idx]` to TOS, TOS stays on the stack.
+        /// Sets `locals[frame.slots + idx]` to TOT, TOT stays on tmps
         SET_LOCAL,
-        /// Puts TOS in the variables stack, TOS is popped.
+        /// Pushes TOT to locals, TOT is popped.
         DEF_LOCAL,
-        /// Pops TOVS.
+        /// Pops TOL.
         POP_LOCAL,
         /// `GET_UPVALUE <idx: u8>`
         ///
-        /// Pushes `frame.closure.upvalues[idx]` into the stack.
+        /// Pushes `frame.closure.upvalues[idx]` to tmps.
         GET_UPVALUE,
         /// `SET_UPVALUE <idx: u8>`
         ///
-        /// Sets `frame.closure.upvalues[idx]` to TOS, TOS stays on the stack.
+        /// Sets `frame.closure.upvalues[idx]` to TOT, TOT stays on tmps.
         SET_UPVALUE,
-        /// Closes the upvalues tied to TOVS, TOVS is popped.
+        /// Closes the upvalues tied to TOL, TOL is popped.
         CLOSE_UPVALUE,
         /// `GET_GLOBAL8 <idx: u8>`
         ///
-        /// Pushes `globals[constants[idx]]` into the stack.
+        /// Pushes `globals[constants[idx]]` to tmps.
+        ///
+        /// Fails if `globals[constants[idx]]` is undefined.
         GET_GLOBAL8,
         /// `GET_GLOBAL16 <idx: u16>`
         ///
-        /// Pushes `globals[constants[idx]]` into the stack.
+        /// Pushes `globals[constants[idx]]` to tmps.
+        ///
+        /// Fails if `globals[constants[idx]]` is undefined.
         GET_GLOBAL16,
         /// `SET_GLOBAL8 <idx: u8>`
         ///
-        /// Sets `globals[constants[idx]]` to TOS, TOS stays on the stack.
+        /// Sets `globals[constants[idx]]` to TOT, TOT stays on tmps.
+        ///
+        /// Fails if `globals[constants[idx]]` is undefined.
         SET_GLOBAL8,
         /// `SET_GLOBAL16 <idx: u16>`
         ///
-        /// Sets `globals[constants[idx]]` to TOS, TOS stays on the stack.
+        /// Sets `globals[constants[idx]]` to TOT, TOT stays on tmps.
+        ///
+        /// Fails if `globals[constants[idx]]` is undefined.
         SET_GLOBAL16,
         /// `DEF_GLOBAL8 <idx: u8>`
         ///
-        /// Sets `globals[constants[idx]]` to TOS, TOS is popped.
+        /// Sets `globals[constants[idx]]` to TOT, TOT is popped.
+        ///
+        /// Fails if `globals[constants[idx]]` is already defined.
         DEF_GLOBAL8,
         /// `DEF_GLOBAL16 <idx: u16>`
         ///
-        /// Sets `globals[constants[idx]]` to TOS, TOS is popped.
+        /// Sets `globals[constants[idx]]` to TOT, TOT is popped.
+        ///
+        /// Fails if `globals[constants[idx]]` is already defined.
         DEF_GLOBAL16,
         /// `CLOSURE8 <idx: u8> <upvaluec: u8> <(local: bool, idx: u8)>...`
         ///
-        /// Expects TOS to be a `Function`, TOS gets replaced with the result.
+        /// Expects TOT to be a `Function`, TOT gets replaced with the result.
         ///
-        /// Builds a closure with TOS and the operands.
+        /// Builds a closure with TOT and the operands.
         CLOSURE8,
         /// `CLOSURE16 <idx: u16> <upvaluec: u8> <(local: bool, idx: u8)>...`
         ///
-        /// Expects TOS to be a `Function`, TOS gets replaced with the result.
+        /// Expects TOT to be a `Function`, TOT gets replaced with the result.
         ///
-        /// Builds a closure with TOS and the operands.
+        /// Builds a closure with TOT and the operands.
         CLOSURE16,
         /// `CALL <argc: u8>`
         ///
-        /// Expects stack length - `argc` - 1 to be a callable, i.e, `Function` or `Native`.
+        /// Expects tmps length - `argc` - 1 to be a callable, i.e, `Closure` or `Native`.
         ///
-        /// Pushes a new call stack frame into the stack.
+        /// Arity checks are done before executing anything.
+        ///
+        /// For `Closures`s it creates a frame, executes it, then pushes the returned result to tmps.
+        ///
+        /// For `Native`s it pops the native and its args from the tmps and invokes it with them pushing the result to tmps.
         CALL,
         /// Leaves the required and optional params and reduces the rest into a list.
         BUILD_VARIADIC,
-        /// Pops the current call stack frame, its arguments and locals, and pushes TOS.
+        /// Closes any upvalue associate to one of the closure's locals, pops the locals, and returns TOT, TOT is popped.
         RET,
         /// `BUILD_LIST <size: u16>`
         ///
-        /// Pops `size` from the stack and pushes them back as a list.
+        /// Takes the last `size`th values from tmps and creates a list with them.
         BUILD_LIST,
         /// `BUILD_HASH_MAP <size: u16>`
         ///
-        /// Expects key-value pairs to be on the stack.
+        /// Expects key-value pairs to be on tmps.
         BUILD_HASH_MAP,
         /// `GET`
         ///
-        /// Implements `TOS1[TOS]`, TOS and TOS1 are popped.
+        /// Implements `TOT1[TOT]`, TOT and TOT1 are popped.
+        ///
+        /// TOT1 can be a list, string, or hash map.
+        ///
+        /// If TOT isn't inside TOT1, an error should be thrown.
+        ///
+        /// For strings and lists TOT must be an integer, but for hash maps, It must be a string.
         GET,
         /// `SET`
         ///
-        /// Implements `TOS1[TOS] = TOS2`, TOS and TOS1 are popped.
+        /// Implements `TOT1[TOT] = TOT2`, TOT and TOT1 are popped.
+        ///
+        /// TOT1 can be a list or hash map.
+        ///
+        /// If TOT1 is a list, It should throw if TOT isn't inside.
+        ///
+        /// For strings and lists TOT must be an integer, but for hash maps, It must be a string.
         SET,
         /// `APPEND_HANDLER <offset: u16>`
         ///
-        /// Appends an errors handler which contains the start of the block's slots and ip of the catch block start.
+        /// `offset` represents the difference between this instruction and the catch's block start.
+        ///
+        /// Appends an errors handler which contains the start of the block's slots and the ip of the catch block start.
         APPEND_HANDLER,
         /// Pops the last handler.
         POP_HANDLER,
-        /// Throws TOS.
+        /// Throws TOT.
         THROW,
-        /// Turns TOS into an iterator.
+        /// Turns TOT into an iterator.
         ///
-        /// Expects TOS to be a string or list.
+        /// Expects TOT to be a string or list.
         ITER,
         /// `UNPACK_LIST <to: u16>`
         ///
         /// Spreads the list into the stack.
         ///
-        /// If `to` isn't equal to the length of TOS.
+        /// If `to` isn't equal to the length of TOT.
         ///
-        /// Expects TOS to be a list.
+        /// Expects TOT to be a list.
         UNPACK_LIST,
         /// `UNPACK_HASH_MAP <propc: u16> <default: bool>...`
         ///
-        /// Expects the keys and default values to be on the stack.
+        /// Expects the keys and default values to be on tmps.
         ///
-        /// Expects TOS to be a a hash map.
+        /// Puts the values on tmps in the same order.
         UNPACK_HASH_MAP,
-        /// Pops TOS.
+        /// Pops TOT.
         POP,
-        /// Duplicates TOS.
+        /// Duplicates TOT.
         DUP,
         UNKNOWN,
     }
@@ -242,16 +264,26 @@ impl Instruction {
         }
     }
 
+    /// `size` must be less than or equal to eight
+    pub fn read_oper(&self, size: usize, idx: usize) -> usize {
+        let operands = &self.operands[idx..idx + size];
+        let mut bytes: [u8; 8] = [0; 8];
+        for (i, byte) in operands.iter().enumerate() {
+            bytes[i] = *byte;
+        }
+        usize::from_ne_bytes(bytes)
+    }
+
     pub fn op_code(&self) -> OpCode {
         self.op_code
     }
 
     pub fn read_byte_oper(&self, idx: usize) -> usize {
-        self.operands[idx] as usize
+        self.read_oper(1, idx)
     }
 
     pub fn read_two_bytes_oper(&self, idx: usize) -> usize {
-        combine(self.operands[idx], self.operands[idx + 1]) as usize
+        self.read_oper(2, idx)
     }
 
     pub fn size(&self) -> usize {
@@ -316,7 +348,7 @@ impl Chunk {
 
     fn write_two_bytes(&mut self, two_bytes: usize) -> Result<(), ()> {
         if two_bytes <= u16::MAX.into() {
-            let (byte1, byte2) = split(two_bytes as u16);
+            let [byte1, byte2] = u16::to_ne_bytes(two_bytes as u16);
             self.write_byte(byte1 as usize).ok();
             self.write_byte(byte2 as usize).ok();
             Ok(())
@@ -325,9 +357,9 @@ impl Chunk {
         }
     }
 
-    fn rewrite_two_bytes(&mut self, idx: usize, value: usize) -> Result<(), ()> {
-        if value <= u16::MAX.into() {
-            let (byte1, byte2) = split(value as u16);
+    fn rewrite_two_bytes(&mut self, idx: usize, two_bytes: usize) -> Result<(), ()> {
+        if two_bytes <= u16::MAX.into() {
+            let [byte1, byte2] = u16::to_ne_bytes(two_bytes as u16);
             self.bytes[idx] = byte1;
             self.bytes[idx + 1] = byte2;
             Ok(())
@@ -492,7 +524,7 @@ impl Chunk {
         }
         macro_rules! two_bytes_oper {
             ($($offset:expr)?) => {
-                combine(self.bytes[ip + 1$( + ($offset))?], self.bytes[ip + 2$( + ($offset))?]) as usize
+                u16::from_ne_bytes([self.bytes[ip + 1$( + ($offset))?], self.bytes[ip + 2$( + ($offset))?]]) as usize
             };
         }
         macro_rules! operands {
