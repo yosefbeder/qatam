@@ -11,6 +11,43 @@ pub enum Value {
     Object(Object),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DataType {
+    Nil,
+    Bool,
+    Number,
+    String,
+    HashMap,
+    List,
+    File,
+    Function,
+    Closure,
+    Native,
+    Iterator,
+}
+
+impl fmt::Display for DataType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Nil => "عدم",
+                Self::Bool => "قيمة منطقية",
+                Self::Number => "عدد",
+                Self::String => "نص",
+                Self::HashMap => "كائن",
+                Self::List => "قائمة",
+                Self::File => "ملف",
+                Self::Function => "دالة",
+                Self::Closure => "دالة",
+                Self::Native => "دالة مدمجة",
+                Self::Iterator => "مكرر",
+            }
+        )
+    }
+}
+
 impl Value {
     /// `Nil`, `Bool(false)`, `Number(0)`, and empty sequences (i.e., empty strings, lists, hash maps) are falsy, the rest are truthy.
     pub fn truthy(&self) -> bool {
@@ -21,6 +58,22 @@ impl Value {
             Self::Object(Object::List(list)) if list.borrow().len() == 0 => false,
             Self::Object(Object::HashMap(hash_map)) if hash_map.borrow().len() == 0 => false,
             _ => true,
+        }
+    }
+
+    pub fn typ(&self) -> DataType {
+        match self {
+            Self::Nil => DataType::Nil,
+            Self::Bool(..) => DataType::Bool,
+            Self::Number(..) => DataType::Number,
+            Self::String(..) => DataType::String,
+            Self::Object(Object::HashMap(..)) => DataType::HashMap,
+            Self::Object(Object::List(..)) => DataType::List,
+            Self::Object(Object::File(..)) => DataType::File,
+            Self::Object(Object::Function(..)) => DataType::Function,
+            Self::Object(Object::Closure(..)) => DataType::Closure,
+            Self::Object(Object::Native(..)) => DataType::Native,
+            Self::Object(Object::Iterator(..)) => DataType::Iterator,
         }
     }
 }
@@ -389,6 +442,18 @@ impl Arity {
             required,
             optional,
         }
+    }
+
+    pub fn typ(&self) -> ArityType {
+        self.typ
+    }
+
+    pub fn required(&self) -> usize {
+        self.required
+    }
+
+    pub fn optional(&self) -> usize {
+        self.optional
     }
 }
 

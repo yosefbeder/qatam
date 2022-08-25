@@ -1,6 +1,7 @@
 mod args;
 
 use args::{get_action, Action, EvalMode};
+use compiler::error::{CompileError, RuntimeError};
 use compiler::{Compiler, CompilerType};
 use parser::Parser;
 use rustyline::{error::ReadlineError, Editor};
@@ -47,7 +48,8 @@ fn try_main() -> Result<(), Error> {
 enum Error {
     Args(args::Error),
     Parser(Vec<parser::Error>),
-    Compiler(Vec<compiler::CompileError>),
+    Compile(Vec<CompileError>),
+    Runtime(RuntimeError),
     Readline(ReadlineError),
     Io(io::Error),
 }
@@ -76,9 +78,15 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<Vec<compiler::CompileError>> for Error {
-    fn from(errors: Vec<compiler::CompileError>) -> Self {
-        Self::Compiler(errors)
+impl From<Vec<CompileError>> for Error {
+    fn from(errors: Vec<CompileError>) -> Self {
+        Self::Compile(errors)
+    }
+}
+
+impl From<RuntimeError> for Error {
+    fn from(err: RuntimeError) -> Self {
+        Self::Runtime(err)
     }
 }
 
@@ -97,7 +105,7 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
-            Self::Compiler(errors) => {
+            Self::Compile(errors) => {
                 let mut iter = errors.iter();
                 write!(f, "{}", iter.next().unwrap())?;
                 while let Some(error) = iter.next() {
@@ -105,11 +113,14 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
+            Self::Runtime(err) => {
+                write!(f, "{err}")
+            }
             Self::Readline(err) => {
                 write!(f, "{err:?}")
             }
             Self::Io(err) => {
-                write!(f, "{err:?}")
+                write!(f, "{err}")
             }
         }
     }

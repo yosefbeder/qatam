@@ -1,144 +1,16 @@
 pub mod chunk;
+pub mod error;
 
 use chunk::value::{self, Arity, ArityType, Value};
-use chunk::Chunk;
-use chunk::OpCode::{self, *};
-use colored::Colorize;
+use chunk::{Chunk, OpCode};
+use error::CompileError;
 use parser::ast::{Expr, Literal, Stml};
 use parser::{token::*, Parser};
-use std::convert::From;
-use std::{cell::RefCell, fmt, fs, io, path::PathBuf, rc::Rc, string};
-
-use TokenType::*;
-
-#[derive(Debug, Clone)]
-pub enum CompileError {
-    TooManyConsts(Rc<Token>),
-    HugeSize(Rc<Token>),
-    BackSlashMisuse(Rc<Token>),
-    DefaultInObject(Rc<Token>),
-    HugeJump(Rc<Token>),
-    TooManyLocals(Rc<Token>),
-    TooManyUpvalues(Rc<Token>),
-    SameVarInScope(Rc<Token>),
-    InvalidDes(Rc<Token>),
-    ReturnOutsideFunction(Rc<Token>),
-    TooManyExports(Rc<Token>),
-    OutsideLoopBreak(Rc<Token>),
-    OutsideLoopContinue(Rc<Token>),
-    InvalidImportUsage(Rc<Token>),
-    InvalidExportUsage(Rc<Token>),
-    Io(Rc<Token>, Rc<io::Error>),
-    ModuleParser(Rc<Token>, Vec<parser::Error>),
-}
+use std::{cell::RefCell, convert::From, fs, path::PathBuf, rc::Rc, string};
 
 use CompileError::*;
-
-impl fmt::Display for CompileError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", "خطأ ترجمي: ".bright_red())?;
-        match self {
-            TooManyConsts(token) => {
-                writeln!(f, "لا يمكن أن تحتوي الدالة الواحدة على أكثر من 65536  ثابت")?;
-                write!(f, "{token}")
-            }
-            HugeSize(token) => {
-                write!(f, "لا يمكن أن  ")?;
-                match token.typ() {
-                    OBracket => write!(f, "تنشأ قائمة جديدة ")?,
-                    OBrace => write!(f, "ينشأ كائن جديد ")?,
-                    _ => unreachable!(),
-                }
-                writeln!(f, "بأكثر من 65535 عنصر")?;
-                write!(f, "{token}")
-            }
-            BackSlashMisuse(token) => {
-                writeln!(f, "استعمال خاطئ ل\"\\\"")?;
-                writeln!(f, "{token}")?;
-                write!(
-                    f,
-                    "حيث يمكن أن تكون متلية فقط ب\"n\" أو \"r\" أو \"t\" أو '\"'"
-                )
-            }
-            DefaultInObject(token) => {
-                writeln!(
-                    f,
-                    "لا يمكن أن يحتوي كائن على قيمة إفتراضية - حيث أنها تكون فقط في التوزيع -"
-                )?;
-                write!(f, "{token}")
-            }
-            HugeJump(_) => {
-                // TODO come up with a good msg
-                todo!()
-            }
-            TooManyLocals(token) => {
-                writeln!(f, "لا يمكن أن تحتوي دالة على أكثر من 256 متغير خاص")?;
-                write!(f, "{token}")
-            }
-            TooManyUpvalues(token) => {
-                writeln!(
-                    f,
-                    "لا يمكن لدالة أن تشير إلى أكثر من 256 متغير من دوال مغلقة عليها"
-                )?;
-                write!(f, "{token}")
-            }
-            SameVarInScope(token) => {
-                writeln!(f, "يوجد متغير يسمى \"{}\" في نفس المجموعة", token.lexeme())?;
-                write!(f, "{token}")
-            }
-            InvalidDes(token) => {
-                writeln!(f, "يمكن فقط استخدام الكلمات والقوائم والكائنات في التوزيع")?;
-                write!(f, "{token}")
-            }
-            ReturnOutsideFunction(token) => {
-                writeln!(f, "لا يمكن الإرجاع من خارج دالة")?;
-                write!(f, "{token}")
-            }
-            TooManyExports(token) => {
-                writeln!(f, "لا يمكن تصدير أكثر من 65535 عنصر")?;
-                write!(f, "{token}")
-            }
-            OutsideLoopBreak(token) => {
-                writeln!(f, "لا يمكن استخدام \"إكسر\" خارج حلقة تكرارية")?;
-                write!(f, "{token}")
-            }
-            OutsideLoopContinue(token) => {
-                writeln!(f, "لا يمكن استخدام \"واصل\" خارج حلقة تكرارية")?;
-                write!(f, "{token}")
-            }
-            InvalidImportUsage(token) => {
-                writeln!(f, "لا يمكن التصدير من داخل الدوال أو المجموعات")?;
-                write!(f, "{token}")
-            }
-            InvalidExportUsage(token) => {
-                writeln!(f, "لا يمكن الاستيراد من داخل الدوال أو المجموعات")?;
-                write!(f, "{token}")
-            }
-            Io(token, err) => {
-                writeln!(f, "{err}")?;
-                write!(f, "{token}")
-            }
-            ModuleParser(token, errors) => {
-                writeln!(
-                    f,
-                    "{} أثناء تحليل الوحدة",
-                    if errors.len() > 1 {
-                        "حدث خطأ"
-                    } else {
-                        "حدثت بعض الأخطاء"
-                    }
-                )?;
-                writeln!(f, "{token}")?;
-                let mut iter = errors.iter();
-                write!(f, "{}", iter.next().unwrap())?;
-                while let Some(err) = iter.next() {
-                    write!(f, "\n{err}")?;
-                }
-                Ok(())
-            }
-        }
-    }
-}
+use OpCode::*;
+use TokenType::*;
 
 #[derive(Debug, Clone)]
 struct Local {
