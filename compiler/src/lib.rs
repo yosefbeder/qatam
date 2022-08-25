@@ -789,16 +789,10 @@ impl<'a> Compiler<'a> {
                 // 1. Unpacking
                 self.unpack_hash_map(Rc::clone(token), props)?;
                 // 2. Destructuring
-                for (key, value, default) in props {
+                for (key, value, _) in props {
                     match value {
                         Some(expr) => self.settable(expr)?,
-                        None => {
-                            if let None = default {
-                                let key = Expr::Variable(Rc::clone(key));
-                                self.get(&key)?;
-                                self.set(&key, true)?
-                            }
-                        }
+                        None => self.set(&Expr::Variable(Rc::clone(key)), true)?,
                     }
                 }
             }
@@ -833,14 +827,11 @@ impl<'a> Compiler<'a> {
                 // 1. Unpacking
                 self.unpack_hash_map(Rc::clone(token), props)?;
                 // 2. Destructuring
-                for (key, value, default) in props {
+                for (key, value, _) in props {
                     match value {
                         Some(expr) => self.definable(expr, export)?,
                         None => {
-                            if let None = default {
-                                self.get(&Expr::Variable(Rc::clone(key)))?;
-                                oper!(key)
-                            }
+                            oper!(key)
                         }
                     }
                 }
