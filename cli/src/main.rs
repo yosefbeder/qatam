@@ -6,6 +6,7 @@ use compiler::{Compiler, CompilerType};
 use parser::Parser;
 use rustyline::{error::ReadlineError, Editor};
 use std::{fmt, fs, io, path::PathBuf};
+use vm::Vm;
 
 const HELP_MSG: &str = "
 طريقة الإستخدام:
@@ -128,12 +129,13 @@ impl fmt::Display for Error {
 
 fn repl() -> Result<(), ReadlineError> {
     let mut rl = Editor::<()>::new()?;
+    let mut vm = Vm::new();
     loop {
         let readline = rl.readline(">>> ");
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_str());
-                match run(line, None, false) {
+                match run(&mut vm, line, None, false) {
                     Ok(_) => {}
                     Err(err) => {
                         eprintln!("{err}")
@@ -156,11 +158,13 @@ fn repl() -> Result<(), ReadlineError> {
 
 fn file(path: PathBuf, untrusted: bool) -> Result<(), Error> {
     let source = fs::read_to_string(&path)?;
-    run(source, Some(path), untrusted)
+    let mut vm = Vm::new();
+    run(&mut vm, source, Some(path), untrusted)
 }
 
-fn run(source: String, path: Option<PathBuf>, _untrusted: bool) -> Result<(), Error> {
+fn run(vm: &mut Vm, source: String, path: Option<PathBuf>, _untrusted: bool) -> Result<(), Error> {
     let (ast, token) = Parser::new(source, path).parse()?;
-    let _ = Compiler::new(CompilerType::Script, &ast, token).compile()?;
+    let chunk = Compiler::new(CompilerType::Script, &ast, token).compile()?;
+    vm.run(chunk)?;
     Ok(())
 }

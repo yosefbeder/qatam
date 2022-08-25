@@ -1,18 +1,14 @@
 [package]
-name = "قتام"
+name = "vm"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-debug = ["debug-parser", "debug-compiler", "debug-vm"]
-debug-parser = ["parser/verbose"]
-debug-compiler = ["compiler/verbose"]
-debug-vm = ["vm/verbose", "debug-compiler"]
+verbose = []
 
 [dependencies]
 parser = { path = "../parser" }
 compiler = { path = "../compiler" }
-vm = { path = "../vm" }
-rustyline = "10.0.0"
+colored = "2.0.0"

@@ -1,6 +1,7 @@
 use super::Chunk;
+use crate::error::RuntimeError;
 use std::convert::{From, Into, TryFrom};
-use std::{cell::RefCell, cmp, collections::HashMap, fmt, fs, ops, rc::Rc};
+use std::{cell::RefCell, cmp, collections::HashMap, fmt, fs, iter, ops, rc::Rc};
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -214,9 +215,27 @@ impl From<f64> for Value {
     }
 }
 
+impl From<usize> for Value {
+    fn from(number: usize) -> Self {
+        Self::Number(number as f64)
+    }
+}
+
 impl From<String> for Value {
     fn from(string: String) -> Self {
         Self::String(string)
+    }
+}
+
+impl From<&str> for Value {
+    fn from(string: &str) -> Self {
+        Self::String(string.to_owned())
+    }
+}
+
+impl From<char> for Value {
+    fn from(ch: char) -> Self {
+        Self::String(ch.to_string())
     }
 }
 
@@ -252,13 +271,87 @@ impl From<Closure> for Value {
 
 impl From<Native> for Value {
     fn from(native: Native) -> Self {
-        Self::Object(Object::Native(native))
+        Self::Object(Object::Native(Rc::new(native)))
     }
 }
 
-impl From<Iterator> for Value {
-    fn from(iterator: Iterator) -> Self {
-        Self::Object(Object::Iterator(Rc::new(iterator)))
+impl From<Iterable> for Value {
+    fn from(iterable: Iterable) -> Self {
+        Self::Object(Object::Iterator(Rc::new(RefCell::new(Iterator::from(
+            iterable,
+        )))))
+    }
+}
+
+impl TryInto<String> for Value {
+    type Error = ();
+
+    fn try_into(self) -> Result<String, Self::Error> {
+        match self {
+            Value::String(s) => Ok(s),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryInto<usize> for Value {
+    type Error = ();
+
+    fn try_into(self) -> Result<usize, Self::Error> {
+        match self {
+            Self::Number(number) => {
+                if number.fract() == 0.0 && number.is_sign_positive() {
+                    Ok(number as usize)
+                } else {
+                    Err(())
+                }
+            }
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryInto<Rc<RefCell<Vec<Value>>>> for Value {
+    type Error = ();
+
+    fn try_into(self) -> Result<Rc<RefCell<Vec<Value>>>, Self::Error> {
+        match self {
+            Self::Object(Object::List(list)) => Ok(list),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryInto<Rc<RefCell<HashMap<String, Value>>>> for Value {
+    type Error = ();
+
+    fn try_into(self) -> Result<Rc<RefCell<HashMap<String, Value>>>, Self::Error> {
+        match self {
+            Self::Object(Object::HashMap(hash_map)) => Ok(hash_map),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryInto<Rc<Function>> for Value {
+    type Error = ();
+
+    fn try_into(self) -> Result<Rc<Function>, Self::Error> {
+        match self {
+            Value::Object(Object::Function(function)) => Ok(function),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryInto<Rc<RefCell<Iterator>>> for Value {
+    type Error = ();
+
+    fn try_into(self) -> Result<Rc<RefCell<Iterator>>, Self::Error> {
+        match self {
+            Self::Object(Object::Iterator(iterator)) => Ok(iterator),
+            _ => Err(()),
+        }
     }
 }
 
@@ -269,8 +362,8 @@ pub enum Object {
     File(Rc<RefCell<File>>),
     Function(Rc<Function>),
     Closure(Rc<Closure>),
-    Native(Native),
-    Iterator(Rc<Iterator>),
+    Native(Rc<Native>),
+    Iterator(Rc<RefCell<Iterator>>),
 }
 
 impl PartialEq for Object {
@@ -281,7 +374,7 @@ impl PartialEq for Object {
             (Self::File(a), Self::File(b)) => Rc::ptr_eq(a, b),
             (Self::Function(a), Self::Function(b)) => Rc::ptr_eq(a, b),
             (Self::Closure(a), Self::Closure(b)) => Rc::ptr_eq(a, b),
-            (Self::Native(a), Self::Native(b)) => *a as usize == *b as usize,
+            (Self::Native(a), Self::Native(b)) => Rc::ptr_eq(a, b),
             (Self::Iterator(a), Self::Iterator(b)) => Rc::ptr_eq(a, b),
             _ => false,
         }
@@ -319,7 +412,7 @@ impl fmt::Display for Object {
             Self::Function(function) => write!(f, "{function}"),
             Self::Closure(closure) => write!(f, "{}", closure.function),
             Self::Native(native) => write!(f, "<{native:?}دالة مدمجة مختزنة في >"),
-            Self::Iterator(iterator) => write!(f, "{iterator}"),
+            Self::Iterator(iterator) => write!(f, "{}", iterator.borrow()),
         }
     }
 }
@@ -479,6 +572,17 @@ pub enum Upvalue {
     Closed(Value),
 }
 
+impl TryInto<usize> for Upvalue {
+    type Error = ();
+
+    fn try_into(self) -> Result<usize, Self::Error> {
+        match self {
+            Self::Open(idx) => Ok(idx),
+            Self::Closed(_) => Err(()),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Closure {
     function: Rc<Function>,
@@ -486,38 +590,92 @@ pub struct Closure {
 }
 
 impl Closure {
+    pub fn new(function: Rc<Function>, upvalues: Vec<Rc<RefCell<Upvalue>>>) -> Self {
+        Self { function, upvalues }
+    }
+
+    pub fn name(&self) -> Option<String> {
+        self.function.name.clone()
+    }
+
+    pub fn arity(&self) -> &Arity {
+        &self.function.arity
+    }
+
+    pub fn chunk(&self) -> &Chunk {
+        self.function.chunk()
+    }
+
+    pub fn upvalue(&self, idx: usize) -> Rc<RefCell<Upvalue>> {
+        Rc::clone(&self.upvalues[idx])
+    }
+
     /// Returns where the function should start executing giving `argc`.
-    ///
-    /// Fails if `argc` doesn't meet the requirements of `Arity`.
-    pub fn start_ip(self, argc: usize) -> Result<usize, ()> {
+    pub fn start_ip(&self, argc: usize) -> usize {
         let Arity {
             typ,
             required,
             optional,
         } = self.function.arity.clone();
         match argc {
-            x if x < required => Err(()),
-            x if x >= required && x <= required + optional => {
-                Ok(self.function.defaults[argc - required])
+            x if x == required => self.function.body,
+            x if x > required && x <= required + optional => {
+                self.function.defaults[argc - required - 1]
             }
-            x if x >= required => {
-                if typ == ArityType::Variadic {
-                    Ok(self.function.body)
-                } else {
-                    Err(())
-                }
-            }
+            x if x > required + optional && typ == ArityType::Variadic => self.function.body,
             _ => unreachable!(),
         }
     }
 }
 
-pub type Native = fn() -> Result<Value, Value>;
+impl From<Chunk> for Closure {
+    fn from(chunk: Chunk) -> Self {
+        Self {
+            function: Rc::new(Function::new(None, chunk, Arity::default(), vec![], 0)),
+            upvalues: vec![],
+        }
+    }
+}
+
+type NativeFn = fn(Vec<Value>) -> Result<Value, RuntimeError>;
+
+#[derive(Debug, Clone)]
+pub struct Native {
+    function: NativeFn,
+    arity: Arity,
+}
+
+impl Native {
+    pub fn new(function: NativeFn, arity: Arity) -> Self {
+        Self { function, arity }
+    }
+
+    pub fn call(&self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        (self.function)(args)
+    }
+
+    pub fn arity(&self) -> &Arity {
+        &self.arity
+    }
+}
 
 #[derive(Debug)]
 pub struct Iterator {
     iterable: Iterable,
     counter: usize,
+}
+
+impl iter::Iterator for Iterator {
+    type Item = Value;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = match &self.iterable {
+            Iterable::List(list) => list.borrow().get(self.counter).cloned(),
+            Iterable::String(s) => s.chars().nth(self.counter).map(|ch| Value::from(ch)),
+        };
+        self.counter += 1;
+        item
+    }
 }
 
 impl fmt::Display for Iterator {
@@ -528,7 +686,27 @@ impl fmt::Display for Iterator {
 
 #[derive(Debug, Clone)]
 pub enum Iterable {
-    HashMap(Rc<RefCell<HashMap<String, Value>>>),
     List(Rc<RefCell<Vec<Value>>>),
     String(String),
+}
+
+impl From<Iterable> for Iterator {
+    fn from(iterable: Iterable) -> Self {
+        Self {
+            iterable,
+            counter: 0,
+        }
+    }
+}
+
+impl TryFrom<Value> for Iterable {
+    type Error = ();
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::String(s) => Ok(Self::String(s)),
+            Value::Object(Object::List(list)) => Ok(Self::List(list)),
+            _ => Err(()),
+        }
+    }
 }
