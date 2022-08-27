@@ -22,6 +22,7 @@ pub enum CompileError {
     InvalidExportUsage(Rc<Token>),
     Io(Rc<Token>, Rc<io::Error>),
     ModuleParser(Rc<Token>, Vec<parser::Error>),
+    TooManyArgs(Rc<Token>),
 }
 
 impl TokenInside for CompileError {
@@ -43,7 +44,8 @@ impl TokenInside for CompileError {
             | Self::InvalidImportUsage(token, ..)
             | Self::InvalidExportUsage(token, ..)
             | Self::Io(token, ..)
-            | Self::ModuleParser(token, ..) => Rc::clone(token),
+            | Self::ModuleParser(token, ..)
+            | Self::TooManyArgs(token, ..) => Rc::clone(token),
         }
     }
 }
@@ -148,6 +150,10 @@ impl fmt::Display for CompileError {
                     write!(f, "\n{err}")?;
                 }
                 Ok(())
+            }
+            Self::TooManyArgs(token) => {
+                writeln!(f, "لا يمكن استدعاء دالة بأكثر من 255 مدخل")?;
+                write!(f, "{token}")
             }
         }
     }

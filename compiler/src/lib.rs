@@ -295,6 +295,12 @@ impl<'a> Compiler<'a> {
             .map_err(|_| self.err(TooManyConsts(token)))
     }
 
+    fn write_call(&mut self, token: Rc<Token>, argc: usize) -> Result<(), ()> {
+        self.chunk
+            .write_call(Rc::clone(&token), argc)
+            .map_err(|_| self.err(TooManyArgs(token)))
+    }
+
     #[allow(unused_must_use)]
     fn write_call_unchecked(&mut self, token: Rc<Token>, argc: usize) {
         self.chunk.write_call(token, argc);
@@ -547,7 +553,7 @@ impl<'a> Compiler<'a> {
         for arg in exprs {
             self.expr(arg)?
         }
-        self.chunk.write_call(op, exprs.len())?;
+        self.write_call(op, exprs.len())?;
         Ok(())
     }
 
