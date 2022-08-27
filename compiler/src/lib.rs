@@ -1123,6 +1123,10 @@ impl<'a> Compiler<'a> {
                 for idx in 0..locals.len() {
                     let local = locals.get(idx);
                     if local.exported {
+                        self.write_const(
+                            Rc::clone(&local.token),
+                            Value::from(local.token.lexeme().clone()),
+                        );
                         self.write_instr_idx(GET_LOCAL, Rc::clone(&local.token), idx);
                         size += 1;
                     }
