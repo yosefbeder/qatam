@@ -6,7 +6,8 @@ use chunk::{Chunk, OpCode};
 use error::CompileError;
 use parser::ast::{Expr, Literal, Stml};
 use parser::{token::*, Parser};
-use std::{cell::RefCell, convert::From, fs, path::PathBuf, rc::Rc, string};
+use std::path::{Path, PathBuf};
+use std::{cell::RefCell, convert::From, fs, rc::Rc, string};
 
 use CompileError::*;
 use OpCode::*;
@@ -1007,10 +1008,16 @@ impl<'a> Compiler<'a> {
             self.err(InvalidImportUsage(token));
             return Err(());
         }
-        let path_string = self.quoted_string(path)?;
-        let source = fs::read_to_string(&path_string)
+        let path = {
+            let tmp = self.quoted_string(path)?;
+            match token.path() {
+                Some(path) => path.parent().unwrap_or(&Path::new("")).join(tmp),
+                None => PathBuf::from(tmp),
+            }
+        };
+        let source = fs::read_to_string(&path)
             .map_err(|err| self.err(Io(Rc::clone(&token), Rc::new(err))))?;
-        let (ast, token) = Parser::new(source, Some(PathBuf::from(path_string)))
+        let (ast, token) = Parser::new(source, Some(path))
             .parse()
             .map_err(|errors| self.err(ModuleParser(Rc::clone(&token), errors)))?;
         let chunk = Compiler::new(CompilerType::Module, &ast, Rc::clone(&token))

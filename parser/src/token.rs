@@ -225,6 +225,10 @@ impl Token {
         self.typ
     }
 
+    pub fn path(&self) -> &Option<PathBuf> {
+        &self.path
+    }
+
     pub fn lexeme(&self) -> &string::String {
         &self.lexeme
     }
