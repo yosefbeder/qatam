@@ -372,16 +372,13 @@ impl Chunk {
         match &value {
             Value::Nil => return NIL_CONST,
             Value::Bool(val) => return if *val { TRUE_CONST } else { FALSE_CONST },
-            Value::String(string) => {
-                for (idx, const_) in self.constants.iter().enumerate() {
-                    if let Value::String(string_2) = const_ {
-                        if string_2 == string {
-                            return idx;
-                        }
+            value => {
+                for (idx, value_) in self.constants.iter().enumerate() {
+                    if value == value_ {
+                        return idx;
                     }
                 }
             }
-            _ => {}
         }
         let idx = self.constants.len();
         self.constants.push(value);
