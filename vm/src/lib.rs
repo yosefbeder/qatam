@@ -81,8 +81,23 @@ impl Vm {
     }
 
     pub fn run(&mut self, chunk: Chunk) -> Result<(), RuntimeError> {
-        Frame::new(self, Rc::new(chunk.into())).run()?;
-        Ok(())
+        if cfg!(feature = "verbose") {
+            println!("[VM] started")
+        }
+        match Frame::new(self, Rc::new(chunk.into())).run() {
+            Ok(_) => {
+                if cfg!(feature = "verbose") {
+                    println!("[VM] succeeded")
+                }
+                Ok(())
+            }
+            Err(err) => {
+                if cfg!(feature = "verbose") {
+                    println!("[VM] failed")
+                }
+                Err(err)
+            }
+        }
     }
 }
 
@@ -224,7 +239,7 @@ impl<'a> Frame<'a> {
             ($x:expr) => {{
                 let offset = instr.read_two_bytes_oper(0);
                 if $x {
-                    self.ip += offset - instr.size();
+                    self.ip += offset;
                     advance = false;
                 } else {
                     self.pop();
@@ -410,7 +425,13 @@ impl<'a> Frame<'a> {
                         let value = Frame::new_function(self.state, closure, argc, self.idx + 1)
                             .run()?
                             .unwrap();
-                        self.push(value)
+                        self.push(value);
+                        if cfg!(feature = "verbose") {
+                            println!(
+                                "[VM] {}'s chunk",
+                                Value::Object(Object::Closure(Rc::clone(&self.closure)))
+                            )
+                        }
                     }
                     Value::Object(Object::Native(native)) => {
                         self.check_arity(native.arity(), argc)?;
@@ -627,9 +648,16 @@ impl<'a> Frame<'a> {
     }
 
     fn run(&mut self) -> Result<Option<Value>, RuntimeError> {
+        if cfg!(feature = "verbose") {
+            println!(
+                "[VM] {}'s chunk",
+                Value::Object(Object::Closure(Rc::clone(&self.closure)))
+            )
+        }
+
         while let Some(instr) = self.closure.chunk().read(self.ip) {
             if cfg!(feature = "verbose") {
-                println!("{} => {:?}", self.ip, self.state.tmps)
+                println!("{}", self.ip)
             }
             let size = instr.size();
             match self.run_instr(instr) {
