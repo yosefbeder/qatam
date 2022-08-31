@@ -231,8 +231,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn write_const(&mut self, token: Rc<Token>, value: Value) -> Result<(), ()> {
-        self.chunk
-            .write_instr_const((CONST8, CONST16), token, value)
+        self.write_instr_const((CONST8, CONST16), token, value)
     }
 
     #[allow(unused_must_use)]
@@ -569,7 +568,7 @@ impl<'a> Compiler<'a> {
 
     fn define(&mut self, token: Rc<Token>) -> Result<(), ()> {
         if self.in_global() {
-            self.chunk.write_instr_const(
+            self.write_instr_const(
                 (DEF_GLOBAL8, DEF_GLOBAL16),
                 Rc::clone(&token),
                 Value::from(token.lexeme().clone()),
