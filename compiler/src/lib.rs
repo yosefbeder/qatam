@@ -479,7 +479,7 @@ impl<'a> Compiler<'a> {
                     self.expr(expr)?;
                     size += 1;
                 }
-                self.chunk.write_build(BUILD_LIST, Rc::clone(token), size)?
+                self.write_build(BUILD_LIST, Rc::clone(token), size)?
             }
             Literal::Object(token, props) => {
                 let mut size = 0;
