@@ -382,7 +382,7 @@ impl<'a> Frame<'a> {
                 let idx = instr.read_oper(instr.size() - 1, 0);
                 let name: String = self.chunk().constant(idx).try_into().unwrap();
                 let value = self.pop();
-                if !self.state.globals.contains_key(&name) {
+                if !self.state.globals.contains_key(&name) || name == "_" {
                     self.state.globals.insert(name, value);
                 } else {
                     return Err(RuntimeError::AlreadyDefined(
