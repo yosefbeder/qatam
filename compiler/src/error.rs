@@ -83,8 +83,10 @@ impl fmt::Display for CompileError {
                 )?;
                 write!(f, "{token}")
             }
-            Self::HugeJump(_) => {
-                todo!("Come up with a good error message")
+            Self::HugeJump(token) => {
+                writeln!(f, "لا يمكن القفز فوق أكثر من 65533 بايت")?;
+                writeln!(f, "{token}")?;
+                write!(f, "إقتراح: إن حدث هذا الخطأ في شرط أو تكرار يمكنك تصغير حجم جسمه بإنشاء بعض الدوال")
             }
             Self::TooManyLocals(token) => {
                 writeln!(f, "لا يمكن أن تحتوي دالة على أكثر من 256 متغير خاص")?;
