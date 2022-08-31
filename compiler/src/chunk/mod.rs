@@ -438,6 +438,8 @@ impl Chunk {
     }
 
     /// Makes the jump at `ip` point to the current ip.
+    ///
+    /// Fails when `self.len()` - ip is greater than 65535.
     pub fn settle_jump(&mut self, ip: usize) -> Result<(), ()> {
         let offset = self.len() - ip;
         if offset <= u16::MAX.into() {
