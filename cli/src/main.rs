@@ -7,6 +7,7 @@ use parser::Parser;
 use rustyline::{error::ReadlineError, Editor};
 use std::{fmt, fs, io, path::PathBuf};
 use vm::Vm;
+use lexer::Lexer;
 
 const HELP_MSG: &str = "
 طريقة الإستخدام:
@@ -135,12 +136,13 @@ fn repl() -> Result<(), ReadlineError> {
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_str());
-                match run(&mut vm, line, None, false) {
-                    Ok(_) => {}
-                    Err(err) => {
-                        eprintln!("{err}")
-                    }
-                }
+                // match run(&mut vm, line, None, false) {
+                //     Ok(_) => {}
+                //     Err(err) => {
+                //         eprintln!("{err}")
+                //     }
+                // }
+                println!("{:?}", Lexer::new(line, None).lex());
             }
             Err(ReadlineError::Interrupted) => {
                 println!("CTRL-C");

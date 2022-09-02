@@ -12,6 +12,7 @@ debug-compiler = ["compiler/verbose"]
 debug-vm = ["vm/verbose", "debug-compiler"]
 
 [dependencies]
+lexer = { path = "../lexer" }
 parser = { path = "../parser" }
 compiler = { path = "../compiler" }
 vm = { path = "../vm" }
