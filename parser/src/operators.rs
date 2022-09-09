@@ -1,4 +1,4 @@
-use super::token::TokenType;
+use lexer::token::TokenType;
 
 #[derive(Clone, Copy)]
 pub enum Associativity {

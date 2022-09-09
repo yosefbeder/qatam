@@ -1,0 +1,6 @@
+returncode: 0
+stdout:
+صحيح
+3 صحيح
+خطأ
+stderr:

@@ -3,11 +3,11 @@ mod args;
 use args::{get_action, Action, EvalMode};
 use compiler::error::{CompileError, RuntimeError};
 use compiler::{Compiler, CompilerType};
+use lexer::Lexer;
 use parser::Parser;
 use rustyline::{error::ReadlineError, Editor};
-use std::{fmt, fs, io, path::PathBuf};
+use std::{fmt, fs, io, path::PathBuf, rc::Rc};
 use vm::Vm;
-use lexer::Lexer;
 
 const HELP_MSG: &str = "
 طريقة الإستخدام:
@@ -49,7 +49,7 @@ fn try_main() -> Result<(), Error> {
 
 enum Error {
     Args(args::Error),
-    Parser(Vec<parser::Error>),
+    Parser(Vec<parser::error::Error>),
     Compile(Vec<CompileError>),
     Runtime(RuntimeError),
     Readline(ReadlineError),
@@ -62,8 +62,8 @@ impl From<args::Error> for Error {
     }
 }
 
-impl From<Vec<parser::Error>> for Error {
-    fn from(errors: Vec<parser::Error>) -> Self {
+impl From<Vec<parser::error::Error>> for Error {
+    fn from(errors: Vec<parser::error::Error>) -> Self {
         Self::Parser(errors)
     }
 }
@@ -136,13 +136,12 @@ fn repl() -> Result<(), ReadlineError> {
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_str());
-                // match run(&mut vm, line, None, false) {
-                //     Ok(_) => {}
-                //     Err(err) => {
-                //         eprintln!("{err}")
-                //     }
-                // }
-                println!("{:?}", Lexer::new(line, None).lex());
+                match run(&mut vm, line, None, false) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        eprintln!("{err}")
+                    }
+                }
             }
             Err(ReadlineError::Interrupted) => {
                 println!("CTRL-C");
@@ -165,7 +164,9 @@ fn file(path: PathBuf, untrusted: bool) -> Result<(), Error> {
 }
 
 fn run(vm: &mut Vm, source: String, path: Option<PathBuf>, _untrusted: bool) -> Result<(), Error> {
-    let (ast, token) = Parser::new(source, path).parse()?;
+    let tokens = Lexer::new(source.clone(), path.as_ref()).lex();
+    let token = Rc::clone(tokens.last().unwrap());
+    let ast = Parser::new(tokens).parse()?;
     let chunk = Compiler::new(CompilerType::Script, &ast, token).compile()?;
     vm.run(chunk)?;
     Ok(())

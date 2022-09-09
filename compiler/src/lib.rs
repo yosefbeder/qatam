@@ -4,14 +4,13 @@ pub mod error;
 use chunk::value::{self, Arity, ArityType, Value};
 use chunk::{Chunk, OpCode};
 use error::CompileError;
+use lexer::{token::*, Lexer};
 use parser::ast::{Expr, Literal, Stml};
-use parser::{token::*, Parser};
+use parser::Parser;
 use std::path::{Path, PathBuf};
-use std::{cell::RefCell, convert::From, fs, rc::Rc, string};
+use std::{cell::RefCell, convert::From, fs, rc::Rc};
 
-use CompileError::*;
 use OpCode::*;
-use TokenType::*;
 
 #[derive(Debug, Clone)]
 struct Local {
@@ -227,7 +226,7 @@ impl<'a> Compiler<'a> {
     ) -> Result<(), ()> {
         self.chunk
             .write_instr_const((u8_instr, u16_instr), Rc::clone(&token), value)
-            .map_err(|_| self.err(TooManyConsts(token)))
+            .map_err(|_| self.err(CompileError::TooManyConsts(token)))
     }
 
     fn write_const(&mut self, token: Rc<Token>, value: Value) -> Result<(), ()> {
@@ -256,31 +255,31 @@ impl<'a> Compiler<'a> {
     fn write_build(&mut self, op_code: OpCode, token: Rc<Token>, size: usize) -> Result<(), ()> {
         self.chunk
             .write_build(op_code, Rc::clone(&token), size)
-            .map_err(|_| self.err(HugeSize(token)))
+            .map_err(|_| self.err(CompileError::HugeSize(token)))
     }
 
     fn settle_jump(&mut self, ip: usize) -> Result<(), ()> {
         self.chunk
             .settle_jump(ip)
-            .map_err(|_| self.err(HugeJump(self.chunk.token(ip))))
+            .map_err(|_| self.err(CompileError::HugeJump(self.chunk.token(ip))))
     }
 
     fn write_loop(&mut self, token: Rc<Token>, ip: usize) -> Result<(), ()> {
         self.chunk
             .write_loop(Rc::clone(&token), ip)
-            .map_err(|_| self.err(HugeJump(token)))
+            .map_err(|_| self.err(CompileError::HugeJump(token)))
     }
 
     fn write_list_unpack(&mut self, token: Rc<Token>, to: usize) -> Result<(), ()> {
         self.chunk
             .write_list_unpack(Rc::clone(&token), to)
-            .map_err(|_| self.err(HugeSize(token)))
+            .map_err(|_| self.err(CompileError::HugeSize(token)))
     }
 
     fn write_hash_map_unpack(&mut self, token: Rc<Token>, defaults: Vec<bool>) -> Result<(), ()> {
         self.chunk
             .write_hash_map_unpack(Rc::clone(&token), defaults)
-            .map_err(|_| self.err(HugeSize(token)))
+            .map_err(|_| self.err(CompileError::HugeSize(token)))
     }
 
     fn write_closure(
@@ -291,13 +290,13 @@ impl<'a> Compiler<'a> {
     ) -> Result<(), ()> {
         self.chunk
             .write_closure(Rc::clone(&token), function, upvalues)
-            .map_err(|_| self.err(TooManyConsts(token)))
+            .map_err(|_| self.err(CompileError::TooManyConsts(token)))
     }
 
     fn write_call(&mut self, token: Rc<Token>, argc: usize) -> Result<(), ()> {
         self.chunk
             .write_call(Rc::clone(&token), argc)
-            .map_err(|_| self.err(TooManyArgs(token)))
+            .map_err(|_| self.err(CompileError::TooManyArgs(token)))
     }
 
     #[allow(unused_must_use)]
@@ -312,14 +311,14 @@ impl<'a> Compiler<'a> {
         match res {
             Ok(_) => Ok(()),
             Err(_) => {
-                self.err(TooManyLocals(token));
+                self.err(CompileError::TooManyLocals(token));
                 Err(())
             }
         }
     }
 
-    fn quoted_string(&mut self, token: Rc<Token>) -> Result<string::String, ()> {
-        let mut content = string::String::new();
+    fn quoted_string(&mut self, token: Rc<Token>) -> Result<String, ()> {
+        let mut content = String::new();
         let mut iter = token.lexeme().chars().skip(1);
         while let Some(ch) = iter.next() {
             if ch == '\\' {
@@ -331,12 +330,12 @@ impl<'a> Compiler<'a> {
                         '\\' => content.push('\\'),
                         '"' => content.push('"'),
                         _ => {
-                            self.err(BackSlashMisuse(token));
+                            self.err(CompileError::BackSlashMisuse(token));
                             return Err(());
                         }
                     }
                 } else {
-                    self.err(BackSlashMisuse(token));
+                    self.err(CompileError::BackSlashMisuse(token));
                     return Err(());
                 }
             } else if ch == '"' {
@@ -349,21 +348,21 @@ impl<'a> Compiler<'a> {
     }
 
     /// Parses quoted strings and unquoted ones.
-    fn string(&mut self, token: Rc<Token>) -> Result<string::String, ()> {
+    fn string(&mut self, token: Rc<Token>) -> Result<String, ()> {
         if token.lexeme().starts_with("\"") {
             self.quoted_string(token)
         } else {
-            Ok(token.lexeme().clone())
+            Ok(token.lexeme().to_owned())
         }
     }
 
     fn unary(&mut self, op: Rc<Token>, expr: &Expr) -> Result<(), ()> {
         self.expr(expr)?;
         match op.typ() {
-            Minus => {
+            TokenType::Minus => {
                 self.chunk.write_instr_no_operands(NEG, op);
             }
-            Bang => {
+            TokenType::Bang => {
                 self.chunk.write_instr_no_operands(NOT, op);
             }
             _ => unreachable!(),
@@ -373,23 +372,27 @@ impl<'a> Compiler<'a> {
 
     fn binary(&mut self, lhs: &Expr, op: Rc<Token>, rhs: &Expr) -> Result<(), ()> {
         match op.typ() {
-            Equal => {
+            TokenType::Equal => {
                 self.expr(rhs)?;
                 self.chunk.write_instr_no_operands(DUP, op);
                 self.settable(lhs)?;
                 return Ok(());
             }
-            PlusEqual | MinusEqual | StarEqual | SlashEqual | PercentEqual => match lhs {
+            TokenType::PlusEqual
+            | TokenType::MinusEqual
+            | TokenType::StarEqual
+            | TokenType::SlashEqual
+            | TokenType::PercentEqual => match lhs {
                 Expr::Variable(..) | Expr::Member(..) => {
                     self.get(lhs)?;
                     self.expr(rhs)?;
                     self.chunk.write_instr_no_operands(
                         match op.typ() {
-                            PlusEqual => ADD,
-                            MinusEqual => SUB,
-                            StarEqual => MUL,
-                            SlashEqual => DIV,
-                            PercentEqual => REM,
+                            TokenType::PlusEqual => ADD,
+                            TokenType::MinusEqual => SUB,
+                            TokenType::StarEqual => MUL,
+                            TokenType::SlashEqual => DIV,
+                            TokenType::PercentEqual => REM,
                             _ => unreachable!(),
                         },
                         op,
@@ -403,13 +406,13 @@ impl<'a> Compiler<'a> {
         }
         self.expr(lhs)?;
         match op.typ() {
-            And => {
+            TokenType::And => {
                 let falsy_lhs = self.chunk.write_jump(JUMP_IF_FALSY_OR_POP, op);
                 self.expr(rhs)?;
                 self.settle_jump(falsy_lhs)?;
                 return Ok(());
             }
-            Or => {
+            TokenType::Or => {
                 let truthy_lhs = self.chunk.write_jump(JUMP_IF_TRUTHY_OR_POP, op);
                 self.expr(rhs)?;
                 self.settle_jump(truthy_lhs)?;
@@ -419,17 +422,17 @@ impl<'a> Compiler<'a> {
         }
         self.expr(rhs)?;
         match op.typ() {
-            Plus => self.chunk.write_instr_no_operands(ADD, op),
-            Minus => self.chunk.write_instr_no_operands(SUB, op),
-            Star => self.chunk.write_instr_no_operands(MUL, op),
-            Slash => self.chunk.write_instr_no_operands(DIV, op),
-            Percent => self.chunk.write_instr_no_operands(REM, op),
-            DEqual => self.chunk.write_instr_no_operands(EQ, op),
-            BangEqual => self.chunk.write_instr_no_operands(NOT_EQ, op),
-            Greater => self.chunk.write_instr_no_operands(GREATER, op),
-            GreaterEqual => self.chunk.write_instr_no_operands(GREATER_EQ, op),
-            Less => self.chunk.write_instr_no_operands(LESS, op),
-            LessEqual => self.chunk.write_instr_no_operands(LESS_EQ, op),
+            TokenType::Plus => self.chunk.write_instr_no_operands(ADD, op),
+            TokenType::Minus => self.chunk.write_instr_no_operands(SUB, op),
+            TokenType::Star => self.chunk.write_instr_no_operands(MUL, op),
+            TokenType::Slash => self.chunk.write_instr_no_operands(DIV, op),
+            TokenType::Percent => self.chunk.write_instr_no_operands(REM, op),
+            TokenType::DEqual => self.chunk.write_instr_no_operands(EQ, op),
+            TokenType::BangEqual => self.chunk.write_instr_no_operands(NOT_EQ, op),
+            TokenType::Greater => self.chunk.write_instr_no_operands(GREATER, op),
+            TokenType::GreaterEqual => self.chunk.write_instr_no_operands(GREATER_EQ, op),
+            TokenType::Less => self.chunk.write_instr_no_operands(LESS, op),
+            TokenType::LessEqual => self.chunk.write_instr_no_operands(LESS_EQ, op),
             _ => unreachable!(),
         }
         Ok(())
@@ -458,8 +461,8 @@ impl<'a> Compiler<'a> {
                 self.bool(
                     Rc::clone(token),
                     match token.typ() {
-                        True => true,
-                        False => false,
+                        TokenType::True => true,
+                        TokenType::False => false,
                         _ => unreachable!(),
                     },
                 );
@@ -490,7 +493,7 @@ impl<'a> Compiler<'a> {
                             None => self.expr(lhs)?,
                         },
                         None => match default {
-                            Some((op, _)) => self.err(DefaultInObject(Rc::clone(op))),
+                            Some((op, _)) => self.err(CompileError::DefaultInObject(Rc::clone(op))),
                             None => self.get(&Expr::Variable(Rc::clone(key)))?,
                         },
                     }
@@ -574,10 +577,10 @@ impl<'a> Compiler<'a> {
                 Value::from(token.lexeme().clone()),
             )?
         } else {
-            if token.lexeme().as_str() != "_" {
+            if token.lexeme() != "_" {
                 if let Some(idx) = self.resolve_local(Rc::clone(&token)) {
                     if self.locals.borrow().get(idx).depth == self.locals.borrow().depth {
-                        self.err(SameVarInScope(token));
+                        self.err(CompileError::SameVarInScope(token));
                         return Err(());
                     }
                 }
@@ -675,7 +678,7 @@ impl<'a> Compiler<'a> {
                 }
             }
             expr => {
-                self.err(InvalidDes(expr.token()));
+                self.err(CompileError::InvalidDes(expr.token()));
                 return Err(());
             }
         }
@@ -715,7 +718,7 @@ impl<'a> Compiler<'a> {
                 }
             }
             expr => {
-                self.err(InvalidDes(expr.token()));
+                self.err(CompileError::InvalidDes(expr.token()));
                 return Err(());
             }
         }
@@ -852,7 +855,7 @@ impl<'a> Compiler<'a> {
         self.write_closure(
             token,
             value::Function::new(
-                name.map(|token| token.lexeme().clone()),
+                name.map(|token| token.lexeme().to_owned()),
                 chunk,
                 arity,
                 defaults,
@@ -890,7 +893,7 @@ impl<'a> Compiler<'a> {
 
     fn return_stml(&mut self, token: Rc<Token>, value: &Option<Expr>) -> Result<(), ()> {
         if self.typ != CompilerType::Function {
-            self.err(ReturnOutsideFunction(Rc::clone(&token)));
+            self.err(CompileError::ReturnOutsideFunction(Rc::clone(&token)));
             return Err(());
         }
         match value {
@@ -964,7 +967,7 @@ impl<'a> Compiler<'a> {
 
     fn break_stml(&mut self, token: Rc<Token>) -> Result<(), ()> {
         if !self.in_loop() {
-            self.err(OutsideLoopBreak(token));
+            self.err(CompileError::OutsideLoopBreak(token));
             return Err(());
         }
         self.breaks.push(self.ip());
@@ -973,7 +976,7 @@ impl<'a> Compiler<'a> {
 
     fn continue_stml(&mut self, token: Rc<Token>) -> Result<(), ()> {
         if !self.in_loop() {
-            self.err(OutsideLoopContinue(token));
+            self.err(CompileError::OutsideLoopContinue(token));
             return Err(());
         }
         self.write_loop(token, *self.loops.last().unwrap())
@@ -1010,7 +1013,7 @@ impl<'a> Compiler<'a> {
         path: Rc<Token>,
     ) -> Result<(), ()> {
         if !self.can_export() {
-            self.err(InvalidImportUsage(token));
+            self.err(CompileError::InvalidImportUsage(token));
             return Err(());
         }
         let path = {
@@ -1021,10 +1024,12 @@ impl<'a> Compiler<'a> {
             }
         };
         let source = fs::read_to_string(&path)
-            .map_err(|err| self.err(Io(Rc::clone(&token), Rc::new(err))))?;
-        let (ast, token) = Parser::new(source, Some(path))
+            .map_err(|err| self.err(CompileError::Io(Rc::clone(&token), Rc::new(err))))?;
+        let tokens = Lexer::new(source, Some(&path)).lex();
+        let token = Rc::clone(tokens.last().unwrap());
+        let ast = Parser::new(tokens)
             .parse()
-            .map_err(|errors| self.err(ModuleParser(Rc::clone(&token), errors)))?;
+            .map_err(|errors| self.err(CompileError::ModuleParser(Rc::clone(&token), errors)))?;
         let chunk = Compiler::new(CompilerType::Module, &ast, Rc::clone(&token))
             .compile()
             .map_err(|errors| {
@@ -1138,7 +1143,7 @@ impl<'a> Compiler<'a> {
                 }
                 self.chunk
                     .write_build(BUILD_HASH_MAP, Rc::clone(&self.token), size)
-                    .map_err(|_| TooManyExports(Rc::clone(&self.token))); // ?
+                    .map_err(|_| CompileError::TooManyExports(Rc::clone(&self.token))); // ?
                 self.chunk
                     .write_instr_no_operands(RET, Rc::clone(&self.token))
             }

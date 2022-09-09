@@ -4,71 +4,73 @@ use colored::Colorize;
 use std::{cmp::PartialEq, convert::Into, fmt, path::PathBuf, rc::Rc, string};
 use variant_count::VariantCount;
 
+use super::is_newline;
+
 #[derive(Debug, Clone, Copy, PartialEq, VariantCount)]
 pub enum TokenType {
-    OParen,         // 0
-    CParen,         // 1
-    OBrace,         // 2
-    CBrace,         // 3
-    OBracket,       // 4
-    CBracket,       // 5
-    Period,         // 6
-    TPeriod,        // 7
-    Plus,           // 8
-    Minus,          // 9
-    Star,           // 10
-    Slash,          // 11
-    Percent,        // 12
-    Comma,          // 13
-    QuestionMark,   // 14
-    Colon,          // 15
-    Equal,          // 16
-    PlusEqual,      // 17
-    MinusEqual,     // 18
-    StarEqual,      // 19
-    SlashEqual,     // 20
-    PercentEqual,   // 21
-    DPlus,          // 22
-    DMinus,         // 23
-    DEqual,         // 24
-    Bang,           // 25
-    BangEqual,      // 26
-    Greater,        // 27
-    GreaterEqual,   // 28
-    Less,           // 29
-    LessEqual,      // 30
-    And,            // 31
-    Or,             // 32
-    String,         // 33
-    UnTermedString, // 34
-    Comment,        // 35
-    Identifier,     // 36
-    If,             // 37
-    ElseIf,         // 38
-    Else,           // 39
-    Function,       // 40
-    Var,            // 41
-    Loop,           // 42
-    While,          // 43
-    Break,          // 44
-    Continue,       // 45
-    Return,         // 46
-    Throw,          // 47
-    Try,            // 48
-    Catch,          // 49
-    Nil,            // 50
-    True,           // 51
-    False,          // 52
-    Number,         // 53
-    Import,         // 54
-    From,           // 55
-    Export,         // 56
-    Pipe,           // 57
-    For,            // 58
-    In,             // 59
-    Unknown,        // 60
-    NewLine,        // 61
-    EOF,            // 62
+    OParen,                   // 0
+    CParen,                   // 1
+    OBrace,                   // 2
+    CBrace,                   // 3
+    OBracket,                 // 4
+    CBracket,                 // 5
+    Period,                   // 6
+    TPeriod,                  // 7
+    Plus,                     // 8
+    Minus,                    // 9
+    Star,                     // 10
+    Slash,                    // 11
+    Percent,                  // 12
+    Comma,                    // 13
+    QuestionMark,             // 14
+    Colon,                    // 15
+    Equal,                    // 16
+    PlusEqual,                // 17
+    MinusEqual,               // 18
+    StarEqual,                // 19
+    SlashEqual,               // 20
+    PercentEqual,             // 21
+    DEqual,                   // 22
+    Bang,                     // 23
+    BangEqual,                // 24
+    Greater,                  // 25
+    GreaterEqual,             // 26
+    Less,                     // 27
+    LessEqual,                // 28
+    And,                      // 29
+    Or,                       // 30
+    String,                   // 31
+    UnterminatedString,       // 32
+    InlineComment,            // 33
+    BlockComment,             // 34
+    UnterminatedBlockComment, // 35
+    Identifier,               // 36
+    If,                       // 37
+    ElseIf,                   // 38
+    Else,                     // 39
+    Function,                 // 38
+    Var,                      // 39
+    Loop,                     // 40
+    While,                    // 41
+    Break,                    // 42
+    Continue,                 // 43
+    Return,                   // 44
+    Throw,                    // 45
+    Try,                      // 46
+    Catch,                    // 47
+    Nil,                      // 48
+    True,                     // 49
+    False,                    // 50
+    Number,                   // 51
+    Import,                   // 52
+    From,                     // 53
+    Export,                   // 54
+    Pipe,                     // 55
+    For,                      // 56
+    In,                       // 57
+    Unknown,                  // 58
+    NewLine,                  // 59
+    EOF,                      // 60
 }
 
 impl Into<&'static str> for TokenType {
@@ -98,8 +100,6 @@ impl Into<&'static str> for TokenType {
             Self::StarEqual => "*=",
             Self::SlashEqual => "/=",
             Self::PercentEqual => "%=",
-            Self::DPlus => "++",
-            Self::DMinus => "--",
 
             Self::DEqual => "==",
             Self::Bang => "!",
@@ -112,8 +112,10 @@ impl Into<&'static str> for TokenType {
             Self::Or => "||",
 
             Self::String => "نص",
-            Self::UnTermedString => "نص غير مغلق",
-            Self::Comment => "تعليق",
+            Self::UnterminatedString => "نص غير مغلق",
+            Self::InlineComment => "تعليق سطري",
+            Self::BlockComment => "تعليق",
+            Self::UnterminatedBlockComment => "تعليق غير مغلق",
 
             Self::Identifier => "كلمة",
             Self::If => "إن",
@@ -175,26 +177,22 @@ impl Token {
     }
 
     pub fn lexeme(&self) -> &str {
-        self.source.get(self.start..self.start + self.length).unwrap()
+        self.source
+            .get(self.start..self.start + self.length)
+            .unwrap()
     }
 
-    pub fn pos(&self) -> (usize, usize) {
-        let mut offset = 0;
+    pub fn line(&self) -> usize {
         let mut line = 1;
-        let mut col = 1;
-        for c in self.source.chars() {
+        for (offset, c) in self.source.char_indices() {
+            if is_newline(c) {
+                line += 1;
+            }
             if offset == self.start {
                 break;
-            } else if c == '\n' {
-                offset += 1;
-                line += 1;
-                col = 1;
-            } else {
-                offset += 1;
-                col += 1;
             }
         }
-        (line, col)
+        line
     }
 }
 
@@ -209,45 +207,69 @@ pub struct Token {
 
 impl fmt::Debug for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let (line, col) = self.pos();
         f.debug_struct("Token")
             .field("type", &self.typ)
             .field("lexeme", &self.lexeme())
             .field("path", &self.path)
-            .field("line", &line)
-            .field("col", &col)
             .finish()
     }
 }
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (line, col) = self.pos();
-        let indent = format!("{line}").len();
-        match &self.path {
-            Some(path) => writeln!(
+        let mut char_indices = self.source.char_indices().peekable();
+        let mut line_idx = 0;
+        let mut line_start_offset = 0;
+        while let Some((offset, c)) = char_indices.next() {
+            if is_newline(c) {
+                line_idx += 1;
+                line_start_offset = offset;
+            }
+            if offset == self.start {
+                while let Some((offset, _)) = char_indices.peek() {
+                    if *offset == self.start + self.length {
+                        break;
+                    } else {
+                        char_indices.next();
+                    }
+                }
+                break;
+            }
+        }
+        let line = line_idx + 1;
+        let indent = (line_idx + 1).to_string().len();
+        if let Some(path) = self.path.as_ref() {
+            writeln!(
                 f,
-                "{}",
-                format!("{}--> {}", " ".repeat(indent), path.display()).bright_cyan()
-            )?,
-            None => {}
-        };
-        writeln!(f, "{}", format!("{} | ", " ".repeat(indent)).bright_cyan())?;
-        write!(f, "{}", format!("{line} | ").bright_cyan())?;
-        let mut line = self
-            .source
-            .lines()
-            .nth(line - 1)
-            .unwrap_or("") // ? if it's an ending empty line
-            .chars()
-            .collect::<Vec<char>>();
-        let start = line.drain(0..col - 1).collect::<string::String>();
-        let lexeme = line
-            .drain(0..self.lexeme().chars().count())
-            .collect::<string::String>();
-        let end = line.drain(..).collect::<string::String>();
-        writeln!(f, "{start}{}{end}", lexeme.underline().bold())?;
-        write!(f, "{}", format!("{} | ", " ".repeat(indent)).bright_cyan())
+                "{:indent$}{} {}",
+                "",
+                "-->".bright_cyan(),
+                path.display().to_string().bright_cyan()
+            )?
+        }
+        writeln!(f, "{:indent$} {}", "", "|".bright_cyan())?;
+        write!(
+            f,
+            "{} {} ",
+            line.to_string().bright_cyan(),
+            "|".bright_cyan()
+        )?;
+        write!(
+            f,
+            "{}{}",
+            self.source.get(line_start_offset..self.start).unwrap(),
+            self.lexeme().underline().bold()
+        )?;
+        while let Some((_, c)) = char_indices.next() {
+            if is_newline(c) {
+                break;
+            } else {
+                write!(f, "{c}")?
+            }
+        }
+        write!(f, "\n")?;
+        writeln!(f, "{:indent$} {}", "", "|".bright_cyan())?;
+        Ok(())
     }
 }
 
@@ -266,3 +288,18 @@ impl Default for Token {
 pub trait TokenInside {
     fn token(&self) -> Rc<Token>;
 }
+
+pub const ERROR_TOKENS: [TokenType; 3] = [
+    TokenType::Unknown,
+    TokenType::UnterminatedString,
+    TokenType::UnterminatedBlockComment,
+];
+
+pub const BINARY_SET: [TokenType; 6] = [
+    TokenType::Equal,
+    TokenType::PlusEqual,
+    TokenType::MinusEqual,
+    TokenType::StarEqual,
+    TokenType::SlashEqual,
+    TokenType::PercentEqual,
+];

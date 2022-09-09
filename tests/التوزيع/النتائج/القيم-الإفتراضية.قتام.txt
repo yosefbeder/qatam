@@ -1,0 +1,9 @@
+returncode: 0
+stdout:
+مصطفى
+18
+يوسف
+18
+يوسف
+16
+stderr:

@@ -1,4 +1,4 @@
-use super::token::{Token, TokenInside};
+use lexer::token::{Token, TokenInside};
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
@@ -56,6 +56,12 @@ pub enum Expr {
     Call(Box<Expr>, Rc<Token>, Vec<Expr>),
     /// expr, op, key
     Member(Box<Expr>, Rc<Token>, Box<Expr>),
+}
+
+impl From<Literal> for Expr {
+    fn from(literal: Literal) -> Self {
+        Expr::Literal(literal)
+    }
 }
 
 impl TokenInside for Expr {

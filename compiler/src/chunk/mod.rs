@@ -1,6 +1,6 @@
 pub mod value;
 
-use parser::token::Token;
+use lexer::token::Token;
 use std::{fmt, rc::Rc};
 use value::{Function, Object, Value};
 
@@ -640,13 +640,13 @@ impl fmt::Debug for Chunk {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut ip = 0;
         if let Some((instr, size)) = self.disassemble_instr(ip) {
-            let (mut line, _) = self.token(ip).pos();
+            let mut line = self.token(ip).line();
             write!(f, "{line:<5} {instr}")?;
             ip += size;
             while let Some((instr, size)) = self.disassemble_instr(ip) {
-                let pos = self.token(ip).pos();
-                if pos.0 != line {
-                    (line, _) = pos;
+                let cur_line = self.token(ip).line();
+                if cur_line != line {
+                    line = cur_line;
                     write!(f, "\n{line:<5} ")?
                 } else {
                     write!(f, "\n{:5} ", "")?

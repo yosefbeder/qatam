@@ -58,6 +58,7 @@ name = "compiler"
 version = "0.1.0"
 dependencies = [
  "colored",
+ "lexer",
  "parser",
 ]
 
@@ -222,6 +223,7 @@ name = "parser"
 version = "0.1.0"
 dependencies = [
  "colored",
+ "lexer",
  "variant_count",
 ]
 
@@ -399,6 +401,7 @@ version = "0.1.0"
 dependencies = [
  "colored",
  "compiler",
+ "lexer",
  "parser",
 ]
 

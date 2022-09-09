@@ -3,7 +3,7 @@ use compiler::chunk::value::{
 };
 use compiler::chunk::{Chunk, Instruction, OpCode::*};
 use compiler::error::{Backtrace, RuntimeError};
-use parser::token::Token;
+use lexer::token::Token;
 use std::collections::{HashMap, LinkedList};
 use std::ops::{Deref, DerefMut, Div, Mul, Rem, Sub};
 use std::{cell::RefCell, cmp::Ordering, rc::Rc};

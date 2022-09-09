@@ -9,6 +9,7 @@ edition = "2021"
 verbose = []
 
 [dependencies]
+lexer = { path = "../lexer" }
 parser = { path = "../parser" }
 compiler = { path = "../compiler" }
 colored = "2.0.0"

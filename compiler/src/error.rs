@@ -1,6 +1,6 @@
 use super::value::{Arity, DataType, Value};
 use colored::Colorize;
-use parser::token::*;
+use lexer::token::*;
 use std::{fmt, io, rc::Rc};
 
 #[derive(Debug, Clone)]
@@ -21,7 +21,7 @@ pub enum CompileError {
     InvalidImportUsage(Rc<Token>),
     InvalidExportUsage(Rc<Token>),
     Io(Rc<Token>, Rc<io::Error>),
-    ModuleParser(Rc<Token>, Vec<parser::Error>),
+    ModuleParser(Rc<Token>, Vec<parser::error::Error>),
     TooManyArgs(Rc<Token>),
 }
 
@@ -147,9 +147,11 @@ impl fmt::Display for CompileError {
                 )?;
                 writeln!(f, "{token}")?;
                 let mut iter = errors.iter();
-                write!(f, "{}", iter.next().unwrap())?;
-                while let Some(err) = iter.next() {
-                    write!(f, "\n{err}")?;
+                if let Some(err) = iter.next() {
+                    write!(f, "{err}")?;
+                    while let Some(err) = iter.next() {
+                        write!(f, "{err}")?
+                    }
                 }
                 Ok(())
             }
@@ -309,7 +311,7 @@ impl fmt::Display for Backtrace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         macro_rules! write_frame {
             ($frame:ident) => {{
-                let (line, _) = $frame.1.pos();
+                let line = $frame.1.line();
                 write!(
                     f,
                     "في {} السطر رقم {line}",

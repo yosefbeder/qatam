@@ -1,0 +1,8 @@
+returncode: 0
+stdout:
+stderr:
+خطأ ترجمي: The system cannot find the file specified. (os error 2)
+ --> tests\الوحدات\وحدة-غير-موجودة.قتام
+  | 
+1 | استورد شئ من "غير-موجود"
+  | 

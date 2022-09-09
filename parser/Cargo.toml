@@ -9,5 +9,6 @@ edition = "2021"
 verbose = []
 
 [dependencies]
+lexer = { path = "../lexer" }
 colored = "2.0.0"
 variant_count = "1.1.0"
